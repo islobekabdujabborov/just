@@ -9,6 +9,7 @@ export default function Create() {
     const [values, setValues] = useState({ title: "", author: "", genre: "Roman", description: "", caption: "" });
     const [video, setVideo] = useState(null);
     const [cover, setCover] = useState(null);
+    const [audioFile, setAudioFile] = useState(null);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -32,13 +33,17 @@ export default function Create() {
             setError("Reel uchun video tanlang.");
             return;
         }
+        if (mode === "book" && !audioFile) {
+            setError("Audiokitob uchun audio fayl tanlang.");
+            return;
+        }
 
         try {
             setSubmitting(true);
 
             let bookId = null;
 
-            if (mode === "reel" || cover) {
+            if (mode === "reel" || mode === "book") {
                 const bookPayload = new FormData();
                 bookPayload.append("title", values.title);
                 bookPayload.append("author_name", values.author || "Noma'lum muallif");
@@ -64,6 +69,7 @@ export default function Create() {
                 setValues({ title: "", author: "", genre: "Roman", description: "", caption: "" });
                 setVideo(null);
                 setCover(null);
+                setAudioFile(null);
 
                 if (created?.id) {
                     window.location.hash = "#/profile";
@@ -71,7 +77,14 @@ export default function Create() {
             }
 
             if (mode === "book") {
+                const audioPayload = new FormData();
+                audioPayload.append("book_id", String(bookId));
+                audioPayload.append("audio_file", audioFile);
+                await api.post("/audiobooks/", audioPayload);
                 setSuccess("Kitob ma'lumotlari saqlandi.");
+                setValues({ title: "", author: "", genre: "Roman", description: "", caption: "" });
+                setCover(null);
+                setAudioFile(null);
             }
         } catch (requestError) {
             setError(requestError.message);
@@ -174,6 +187,7 @@ export default function Create() {
                             <input
                                 type="file"
                                 accept="audio/*"
+                                onChange={(event) => setAudioFile(event.target.files?.[0] || null)}
                                 className="mt-1 w-full glass rounded-xl px-4 py-3 outline-none text-slate-800"
                             />
                         </label>
@@ -191,7 +205,7 @@ export default function Create() {
                         </p>
                     )}
 
-                    <Btn cn="w-full py-3 mt-5" on={submit}>
+                    <Btn type="submit" disabled={submitting} cn="w-full py-3 mt-5">
                         {submitting ? "Yuklanmoqda..." : mode === "reel" ? "Reel joylash" : "Kitobni saqlash"}
                     </Btn>
                 </div>
