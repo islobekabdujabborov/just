@@ -21,7 +21,8 @@ export default function App(){
  const route=useRoute();
  const isAuth=route==="/login"||route==="/register";
  const isReelFeed=route==="/";
- const page=route.startsWith("/books/")?h(BookDetail,{id:route.split("/")[2],nav}):{
+ const isUserProfile=route.startsWith("/users/");
+ const page=route.startsWith("/books/")?h(BookDetail,{id:route.split("/")[2],nav}):isUserProfile?h(Profile,{nav,username:decodeURIComponent(route.slice("/users/".length))}):{
   "/":h(Reels,{nav}),"/explore":h(Explore,{nav}),"/library":h(Library,{nav}),"/profile":h(Profile,{nav}),
   "/create":h(Create,{nav}),"/notifications":h(Notifications,{nav}),"/settings":h(Settings,{nav}),
   "/login":h(Auth,{nav}),"/register":h(Auth,{reg:true,nav})

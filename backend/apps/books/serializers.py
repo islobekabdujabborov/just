@@ -43,7 +43,8 @@ class BookSerializer(serializers.ModelSerializer):
         author_name = validated_data.pop("author_name", "Unknown author")
         author, _ = Author.objects.get_or_create(name=author_name)
         request = self.context.get("request")
-        return Book.objects.create(author=author, owner=request.user if request and request.user.is_authenticated else None, **validated_data)
+        owner = validated_data.pop("owner", request.user if request and request.user.is_authenticated else None)
+        return Book.objects.create(author=author, owner=owner, **validated_data)
     def update(self, instance, validated_data):
         author_name = validated_data.pop("author_name", None)
         if author_name:

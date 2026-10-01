@@ -2,40 +2,64 @@ import React, { useEffect, useState } from "react";
 import { api, getAccessToken, itemsFrom } from "../api";
 import { Btn, I } from "../components/ui";
 
-export default function Profile({ nav }) {
-  const tabs = ["Reels", "Audiokitoblar", "Yoqtirganlar"];
+export default function Profile({ nav, username }) {
   const [selected, setSelected] = useState(0);
   const [profile, setProfile] = useState(null);
   const [reels, setReels] = useState([]);
   const [audiobooks, setAudiobooks] = useState([]);
   const [likedBooks, setLikedBooks] = useState([]);
+  const [isOwnProfile, setIsOwnProfile] = useState(!username);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followSubmitting, setFollowSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getAccessToken()) {
+    if (!username && !getAccessToken()) {
       nav("/login");
       return;
     }
 
     Promise.all([
-      api.get("/auth/me/"),
+      username ? api.get(`/users/${encodeURIComponent(username)}/`) : api.get("/auth/me/"),
       api.get("/reels/"),
-      api.get("/audiobooks/").catch(() => []),
-      api.get("/library/liked/").catch(() => []),
+      username ? Promise.resolve([]) : api.get("/audiobooks/").catch(() => []),
+      username ? Promise.resolve([]) : api.get("/library/liked/").catch(() => []),
+      getAccessToken() ? api.get("/auth/me/").catch(() => null) : Promise.resolve(null),
     ])
-      .then(([user, payload, audioPayload, likedPayload]) => {
-        const ownReels = itemsFrom(payload).filter(
-          (reel) => String(reel.author?.id || reel.author_id) === String(user.id),
+      .then(([user, payload, audioPayload, likedPayload, currentUser]) => {
+        const userReels = itemsFrom(payload).filter(
+          (reel) => (reel.author?.username || reel.u) === user.username,
         );
         setProfile(user);
-        setReels(ownReels);
+        setReels(userReels);
         setAudiobooks(itemsFrom(audioPayload));
         setLikedBooks(itemsFrom(likedPayload));
+        setIsOwnProfile(!username || currentUser?.id === user.id);
+        setIsFollowing(Boolean(user.is_following));
       })
       .catch((reason) => setError(reason.message))
       .finally(() => setLoading(false));
-  }, [nav]);
+  }, [nav, username]);
+
+  const toggleFollow = async () => {
+    if (!getAccessToken()) {
+      nav("/login");
+      return;
+    }
+    setFollowSubmitting(true);
+    setError("");
+    try {
+      const path = `/users/${encodeURIComponent(profile.username)}/follow/`;
+      const result = isFollowing ? await api.delete(path) : await api.post(path, {});
+      setIsFollowing(result.is_following);
+      setProfile((current) => ({ ...current, followers_count: result.followers_count }));
+    } catch (reason) {
+      setError(reason.message);
+    } finally {
+      setFollowSubmitting(false);
+    }
+  };
 
   if (loading) {
     return <p className="text-sm text-slate-500">Profil yuklanmoqda...</p>;
@@ -46,10 +70,11 @@ export default function Profile({ nav }) {
   }
 
   const stats = [
-    [profile.posts_count || reels.length, "Post"],
+    [profile.posts_count ?? reels.length, "Post"],
     [profile.followers_count || 0, "Obunachi"],
     [profile.following_count || 0, "Obuna"],
   ];
+  const tabs = isOwnProfile ? ["Reels", "Audiokitoblar", "Yoqtirganlar"] : ["Reels"];
 
   return (
     <div>
@@ -69,8 +94,12 @@ export default function Profile({ nav }) {
             ))}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Btn on={() => nav("/create")} cn="px-5 py-2 text-sm">Kontent joylash</Btn>
-            <Btn v="g" on={() => nav("/settings")} cn="px-4 py-2 text-sm">Profilni tahrirlash</Btn>
+            {isOwnProfile ? <>
+              <Btn on={() => nav("/create")} cn="px-5 py-2 text-sm">Kontent joylash</Btn>
+              <Btn v="g" on={() => nav("/settings")} cn="px-4 py-2 text-sm">Profilni tahrirlash</Btn>
+            </> : <Btn onClick={toggleFollow} disabled={followSubmitting} cn="px-5 py-2 text-sm">
+              {followSubmitting ? "Kutilmoqda..." : isFollowing ? "Obunani bekor qilish" : "Obuna bo'lish"}
+            </Btn>}
           </div>
         </div>
       </div>

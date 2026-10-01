@@ -61,7 +61,7 @@ export default function Reels({nav}){
    <div className="absolute inset-0 grid place-items-center opacity-90"><div className="h-28 w-28 rounded-[2rem] border border-white/20 bg-white/10 backdrop-blur-sm"><div className="h-full w-full rounded-[2rem] bg-gradient-to-br from-white/20 via-white/5 to-transparent"/></div></div>
    <div className="relative mt-auto p-5 pb-24 md:pb-6 w-full flex items-end gap-4">
     <div className="flex-1 min-w-0">
-     <p className="text-sm text-white/70 mb-2">@{reel.author?.username||reel.u||"kitobxon"}</p>
+    <button type="button" onClick={()=>reel.author?.username&&nav(`/users/${encodeURIComponent(reel.author.username)}`)} className="text-sm text-white/70 mb-2 hover:text-white">@{reel.author?.username||reel.u||"kitobxon"}</button>
      <h2 className="text-3xl font-extrabold">{reel.t||reel.book?.title}</h2>
      <p className="text-white/70 text-sm">{reel.a||reel.book?.author?.name||""} • {reel.g||reel.book?.genre?.name||reel.book?.genre||""} • {reel.d||""}</p>
      <p className="text-sm text-white/80 mt-2 max-w-md">{reel.cap||reel.caption}</p>
