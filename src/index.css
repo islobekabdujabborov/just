@@ -3,15 +3,17 @@
 @tailwind utilities;
 
 html,body,#root{height:100%}
-body{margin:0;background:linear-gradient(180deg,#f8fafc 0%,#f3f4f6 100%);color:#0f172a;font-family:Manrope,system-ui,sans-serif}
+body{margin:0;background:#fff;color:#000;font-family:Manrope,system-ui,sans-serif}
 *{box-sizing:border-box}
 ::-webkit-scrollbar{width:0;height:0}
 .snap{scroll-snap-type:y mandatory}
 .snapi{scroll-snap-align:start}
-.glass{background:rgba(255,255,255,.8);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.18);box-shadow:0 8px 24px rgba(15,23,42,.04)}
-.glow{box-shadow:0 0 60px -18px rgba(139,92,246,.55)}
-[class*="text-white"],[class*="text-white/"]{color:#1f2937!important}
-[class*="border-white/"]{border-color:rgba(148,163,184,.23)!important}
-[class*="divide-white/"]{border-color:rgba(148,163,184,.18)!important}
-[class*="bg-black/"]{background-color:rgba(255,255,255,.85)!important}
-[class*="bg-[#0d0d16]"]{background-color:#fff!important}
+.glass{background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border:1px solid rgba(0,0,0,.18);box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.glow{box-shadow:0 0 0 2px rgba(0,0,0,.12)}
+[class*="border-white/"]{border-color:rgba(255,255,255,.3)!important}
+[class*="divide-white/"]{border-color:rgba(0,0,0,.12)!important}
+[class*="bg-violet-"],[class*="bg-fuchsia-"],[class*="bg-indigo-"],[class*="bg-emerald-"],[class*="bg-amber-"],[class*="bg-cyan-"],[class*="bg-rose-"],[class*="bg-sky-"]{background-color:#000!important;color:#fff!important}
+[class*="hover:bg-violet-"]:hover,[class*="hover:bg-fuchsia-"]:hover,[class*="hover:bg-indigo-"]:hover,[class*="hover:bg-emerald-"]:hover,[class*="hover:bg-amber-"]:hover,[class*="hover:bg-cyan-"]:hover,[class*="hover:bg-rose-"]:hover,[class*="hover:bg-sky-"]:hover{background-color:#000!important;color:#fff!important}
+[class*="text-violet-"],[class*="text-fuchsia-"],[class*="text-indigo-"],[class*="text-emerald-"],[class*="text-amber-"],[class*="text-cyan-"],[class*="text-rose-"],[class*="text-sky-"]{color:#000!important}
+[class*="border-violet-"],[class*="border-fuchsia-"],[class*="border-indigo-"],[class*="border-emerald-"],[class*="border-amber-"],[class*="border-cyan-"],[class*="border-rose-"],[class*="border-sky-"]{border-color:#000!important}
+[class*="focus:border-violet-"]:focus{border-color:#000!important}
