@@ -3,9 +3,15 @@
 @tailwind utilities;
 
 html,body,#root{height:100%}
-body{margin:0;background:#07070d;color:#fff;font-family:Manrope,system-ui,sans-serif}
+body{margin:0;background:linear-gradient(180deg,#f8fafc 0%,#f3f4f6 100%);color:#0f172a;font-family:Manrope,system-ui,sans-serif}
+*{box-sizing:border-box}
 ::-webkit-scrollbar{width:0;height:0}
 .snap{scroll-snap-type:y mandatory}
 .snapi{scroll-snap-align:start}
-.glass{background:rgba(255,255,255,.04);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.07)}
-.glow{box-shadow:0 0 60px -18px #8b5cf6}
+.glass{background:rgba(255,255,255,.8);backdrop-filter:blur(12px);border:1px solid rgba(148,163,184,.18);box-shadow:0 8px 24px rgba(15,23,42,.04)}
+.glow{box-shadow:0 0 60px -18px rgba(139,92,246,.55)}
+[class*="text-white"],[class*="text-white/"]{color:#1f2937!important}
+[class*="border-white/"]{border-color:rgba(148,163,184,.23)!important}
+[class*="divide-white/"]{border-color:rgba(148,163,184,.18)!important}
+[class*="bg-black/"]{background-color:rgba(255,255,255,.85)!important}
+[class*="bg-[#0d0d16]"]{background-color:#fff!important}
