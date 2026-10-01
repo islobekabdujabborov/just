@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,body,#root{height:100%}
+body{margin:0;background:#07070d;color:#fff;font-family:Manrope,system-ui,sans-serif}
+::-webkit-scrollbar{width:0;height:0}
+.snap{scroll-snap-type:y mandatory}
+.snapi{scroll-snap-align:start}
+.glass{background:rgba(255,255,255,.04);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.07)}
+.glow{box-shadow:0 0 60px -18px #8b5cf6}
