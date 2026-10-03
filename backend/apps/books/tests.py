@@ -1,10 +1,14 @@
 import tempfile
+from io import BytesIO, StringIO
+from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
+from PIL import Image
 from rest_framework.test import APITestCase
 from apps.users.models import User
 from apps.books.models import Author, Book, Genre
 from apps.reels.models import Reel
+from apps.audiobooks.models import Audiobook
 from apps.interactions.models import Like
 
 class AvoBookApiTests(APITestCase):
@@ -41,6 +45,21 @@ class AvoBookApiTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["g"], "Ta'lim")
 
+    def test_book_cover_upload_is_saved_and_returned_as_a_media_url(self):
+        image = BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(image, format="PNG")
+        self.client.force_authenticate(self.user)
+        with tempfile.TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            response = self.client.post("/api/books/", {
+                "title": "Muqovali asar",
+                "author_name": "Yangi muallif",
+                "genre": "Roman",
+                "cover": SimpleUploadedFile("cover.png", image.getvalue(), content_type="image/png"),
+            }, format="multipart")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["cover"].endswith("/media/books/cover.png"))
+
     def test_reel_can_be_created_with_a_video(self):
         self.client.force_authenticate(self.user)
         with tempfile.TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
@@ -51,6 +70,34 @@ class AvoBookApiTests(APITestCase):
             }, format="multipart")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["caption"], "Yangi reel")
+
+    def test_only_audiobook_owner_can_create_chapters(self):
+        other_user = User.objects.create_user(username="other", email="other@example.uz", password="strong-pass-123")
+        other_author = Author.objects.create(name="Other author")
+        other_book = Book.objects.create(title="Other book", author=other_author, genre=self.genre, owner=other_user)
+        audiobook = Audiobook.objects.create(book=other_book, created_by=other_user)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(f"/api/audiobooks/{audiobook.id}/chapters/", {"title": "Unauthorized chapter"}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_invalid_listening_progress_returns_client_error(self):
+        audiobook = Audiobook.objects.create(book=self.book, created_by=self.user)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(f"/api/audiobooks/{audiobook.id}/progress/", {
+            "position": "not-a-number",
+            "percentage": 140,
+        }, format="json")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_seeded_demo_accounts_cannot_use_a_shared_password(self):
+        call_command("seed_data", stdout=StringIO())
+
+        seeded_user = User.objects.get(username="sardor_ovoz")
+        self.assertFalse(seeded_user.has_usable_password())
 
     def test_reel_like_is_idempotent(self):
         reel = Reel.objects.create(author=self.user, book=self.book, caption="Demo reel")

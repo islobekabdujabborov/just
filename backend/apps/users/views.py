@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Follow, User
-from .serializers import EmailTokenSerializer, RegisterSerializer, UserSerializer
+from .serializers import EmailTokenSerializer, PrivateUserSerializer, RegisterSerializer, UserSerializer
 from apps.notifications.models import Notification
 
 class RegisterView(generics.CreateAPIView):
@@ -25,7 +25,7 @@ class LoginView(TokenObtainPairView):
         return response
 
 class CurrentUserView(generics.RetrieveUpdateAPIView):
-    serializer_class = UserSerializer
+    serializer_class = PrivateUserSerializer
     permission_classes = [IsAuthenticated]
     def get_object(self): return self.request.user
 
@@ -33,15 +33,19 @@ class UserDetailView(APIView):
     def get(self, request, username):
         user = get_object_or_404(User, username=username)
         data = UserSerializer(user, context={"request": request}).data
+        data.pop("email", None)
         data["is_following"] = request.user.is_authenticated and Follow.objects.filter(follower=request.user, followed=user).exists()
-        data["reels"] = user.reels.select_related("book", "book__author", "book__genre").order_by("-created_at")[:12].values("id", "caption", "created_at")
+        from apps.reels.serializers import ReelSerializer
+        reels = user.reels.select_related("book", "book__author", "book__genre", "author").order_by("-created_at")[:12]
+        data["reels"] = ReelSerializer(reels, many=True, context={"request": request}).data
         return Response(data)
     def post(self, request, username):
         if not request.user.is_authenticated: return Response(status=status.HTTP_401_UNAUTHORIZED)
         target = get_object_or_404(User, username=username)
         if target == request.user: return Response({"detail": "You cannot follow yourself."}, status=400)
-        Follow.objects.get_or_create(follower=request.user, followed=target)
-        Notification.objects.create(recipient=target, actor=request.user, type="follow", text=f"@{request.user.username} started following you")
+        _, created = Follow.objects.get_or_create(follower=request.user, followed=target)
+        if created:
+            Notification.objects.create(recipient=target, actor=request.user, type="follow", text=f"@{request.user.username} started following you")
         return Response({"is_following": True, "followers_count": target.followers.count()})
     def delete(self, request, username):
         if not request.user.is_authenticated: return Response(status=status.HTTP_401_UNAUTHORIZED)

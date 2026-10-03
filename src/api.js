@@ -12,6 +12,13 @@ export const clearTokens=()=>{
  localStorage.removeItem(REFRESH_KEY);
 };
 
+const flattenErrors=value=>{
+ if(typeof value==="string")return value;
+ if(Array.isArray(value))return value.map(flattenErrors).filter(Boolean).join(" ");
+ if(value&&typeof value==="object")return Object.values(value).map(flattenErrors).filter(Boolean).join(" ");
+ return "";
+};
+
 async function request(path,{method="GET",body,headers={},retry=true}={}){
  const token=getAccessToken();
  const response=await fetch(`${API_URL}${path}`,{
@@ -19,14 +26,17 @@ async function request(path,{method="GET",body,headers={},retry=true}={}){
   headers:{...(body instanceof FormData?{}:{"Content-Type":"application/json"}),...(token?{Authorization:`Bearer ${token}`}:{ }),...headers},
   body:body===undefined?undefined:body instanceof FormData?body:JSON.stringify(body)
  });
- if(response.status===401&&retry&&localStorage.getItem(REFRESH_KEY)){
-  const refreshResponse=await fetch(`${API_URL}/auth/refresh/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh:localStorage.getItem(REFRESH_KEY)})});
-  if(refreshResponse.ok){saveTokens(await refreshResponse.json());return request(path,{method,body,headers,retry:false});}
+ if(response.status===401&&retry){
+  const refreshToken=localStorage.getItem(REFRESH_KEY);
+  if(refreshToken){
+   const refreshResponse=await fetch(`${API_URL}/auth/refresh/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh:refreshToken})});
+   if(refreshResponse.ok){saveTokens(await refreshResponse.json());return request(path,{method,body,headers,retry:false});}
+  }
   clearTokens();
  }
  if(!response.ok){
-  const error=await response.json().catch(()=>({detail:response.statusText}));
-  throw new Error(Object.values(error).flat().join(" ")||`API error ${response.status}`);
+  const payload=await response.json().catch(()=>null);
+  throw new Error(flattenErrors(payload)||`So'rov bajarilmadi (${response.status}). ${response.statusText||""}`.trim());
  }
  if(response.status===204)return null;
  return response.json();

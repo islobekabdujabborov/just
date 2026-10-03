@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from "react";
+import React,{useEffect,useRef,useState} from "react";
 import {G} from "../data/mock";
 import {Btn,I} from "../components/ui";
 import {api,itemsFrom} from "../api";
@@ -11,6 +11,11 @@ export default function Reels({nav}){
  const [commentItems,setCommentItems]=useState([]);
  const [commentText,setCommentText]=useState("");
  const [error,setError]=useState("");
+ const [loading,setLoading]=useState(true);
+ const [playing,setPlaying]=useState({});
+ const [muted,setMuted]=useState(true);
+ const [videoErrors,setVideoErrors]=useState({});
+ const feedRef=useRef(null);
 
  useEffect(()=>{
   api.get("/reels/").then(payload=>{
@@ -18,8 +23,24 @@ export default function Reels({nav}){
    setReels(list);
    setLiked(Object.fromEntries(list.map(reel=>[reel.id,reel.is_liked])));
    setSaved(Object.fromEntries(list.map(reel=>[reel.id,reel.is_saved])));
-  }).catch(reason=>setError(reason.message));
+  }).catch(reason=>setError(reason.message)).finally(()=>setLoading(false));
  },[]);
+
+ useEffect(()=>{
+  if(!feedRef.current||!reels.length||typeof IntersectionObserver==="undefined")return;
+  const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{
+   const video=entry.target;
+   const reelId=Number(video.dataset.reelId);
+   if(entry.isIntersecting){
+    video.play().then(()=>setPlaying(previous=>({...previous,[reelId]:true}))).catch(()=>setPlaying(previous=>({...previous,[reelId]:false})));
+   }else{
+    video.pause();
+    setPlaying(previous=>({...previous,[reelId]:false}));
+   }
+  }),{threshold:0.7});
+  feedRef.current.querySelectorAll("video[data-reel-id]").forEach(video=>observer.observe(video));
+  return()=>observer.disconnect();
+ },[reels]);
 
  const toggleInteraction=async(reel,key)=>{
   const active=key==="liked"?liked[reel.id]:saved[reel.id];
@@ -53,14 +74,24 @@ export default function Reels({nav}){
  };
  const count=value=>Number(value||0).toLocaleString();
 
- return <div className="snap h-[100dvh] overflow-y-auto -m-4 md:m-0">
+ if(loading)return <div className="grid min-h-[60dvh] place-items-center" role="status">Reellar yuklanmoqda...</div>;
+ if(!reels.length)return <div className="grid min-h-[70dvh] place-items-center px-5 text-center">
+    <div><h1 className="text-2xl font-extrabold mb-2">Hozircha reel yo'q</h1><p className="text-sm text-slate-600 mb-5">Birinchi reelni siz joylang.</p><Btn onClick={()=>nav("/create")}>Reel yaratish</Btn>{error&&<p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}</div>
+ </div>;
+
+ return <div ref={feedRef} className="snap h-[100dvh] overflow-y-auto md:m-0">
   {error&&<p role="alert" className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-rose-950 px-4 py-2 text-sm text-rose-100">{error}</p>}
   {reels.map(reel=><div key={reel.id} className="snapi h-[100dvh] md:h-[calc(100dvh-2rem)] md:mb-4 md:rounded-3xl relative overflow-hidden flex">
    <div className={`absolute inset-0 bg-gradient-to-br ${G[(reel.id-1)%6]} opacity-70`}/>
    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/50"/>
+    {reel.video_url||reel.video?<video data-reel-id={reel.id} src={reel.video_url||reel.video} muted={muted} loop playsInline preload="none" onPlay={()=>setPlaying(previous=>({...previous,[reel.id]:true}))} onPause={()=>setPlaying(previous=>({...previous,[reel.id]:false}))} onError={()=>setVideoErrors(previous=>({...previous,[reel.id]:true}))} className={`absolute inset-0 h-full w-full object-cover ${videoErrors[reel.id]?"hidden":""}`}/>:null}
+    {!reel.video_url&&!reel.video&&<p className="absolute inset-0 grid place-items-center text-sm text-white/80">Bu reelda video mavjud emas.</p>}
    <div className="absolute inset-0 grid place-items-center opacity-90"><div className="h-28 w-28 rounded-[2rem] border border-white/20 bg-white/10 backdrop-blur-sm"><div className="h-full w-full rounded-[2rem] bg-gradient-to-br from-white/20 via-white/5 to-transparent"/></div></div>
    <div className="relative mt-auto p-5 pb-24 md:pb-6 w-full flex items-end gap-4">
     <div className="flex-1 min-w-0">
+        {(reel.video_url||reel.video)&&!videoErrors[reel.id]&&<button type="button" onClick={()=>{const video=feedRef.current?.querySelector(`[data-reel-id="${reel.id}"]`);if(!video)return;if(video.paused)video.play().catch(()=>{});else video.pause();}} aria-label={playing[reel.id]?"Videoni pauza qilish":"Videoni ijro etish"} className="mb-3 rounded-full bg-black/50 px-4 py-2 text-sm text-white">{playing[reel.id]?"Pauza":"Ijro"}</button>}
+         {(reel.video_url||reel.video)&&!videoErrors[reel.id]&&<button type="button" onClick={()=>setMuted(value=>!value)} aria-label={muted?"Ovoz yoqish":"Ovozni o'chirish"} className="ml-2 rounded-full bg-black/50 px-4 py-2 text-sm text-white">{muted?"Ovoz yoqish":"Ovozni o'chirish"}</button>}
+         {videoErrors[reel.id]&&<p role="status" className="text-sm text-white/80 mb-2">Video yuklanmadi.</p>}
     <button type="button" onClick={()=>reel.author?.username&&nav(`/users/${encodeURIComponent(reel.author.username)}`)} className="text-sm text-white/70 mb-2 hover:text-white">@{reel.author?.username||reel.u||"kitobxon"}</button>
      <h2 className="text-3xl font-extrabold">{reel.t||reel.book?.title}</h2>
      <p className="text-white/70 text-sm">{reel.a||reel.book?.author?.name||""} • {reel.g||reel.book?.genre?.name||reel.book?.genre||""} • {reel.d||""}</p>

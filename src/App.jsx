@@ -10,7 +10,7 @@ import Create from "./pages/Create";
 import Notifications from "./pages/Notifications";
 import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
-import {clearTokens} from "./api";
+import {clearTokens,getAccessToken} from "./api";
 
 const nav=path=>{location.hash=path};
 const useRoute=()=>{const [route,setRoute]=useState(location.hash.slice(1)||"/");useEffect(()=>{const onHashChange=()=>{setRoute(location.hash.slice(1)||"/");window.scrollTo(0,0)};addEventListener("hashchange",onHashChange);return()=>removeEventListener("hashchange",onHashChange)},[]);return route};
@@ -21,8 +21,15 @@ export default function App(){
  const route=useRoute();
  const isAuth=route==="/login"||route==="/register";
  const isReelFeed=route==="/";
+ const isProtectedRoute=["/create","/library","/profile","/notifications","/settings"].includes(route);
+ useEffect(()=>{
+  if(isProtectedRoute&&!getAccessToken()){
+   sessionStorage.setItem("avobook.returnTo",route);
+   nav("/login");
+  }
+ },[isProtectedRoute,route]);
  const isUserProfile=route.startsWith("/users/");
- const page=route.startsWith("/books/")?h(BookDetail,{id:route.split("/")[2],nav}):isUserProfile?h(Profile,{nav,username:decodeURIComponent(route.slice("/users/".length))}):{
+ const page=isProtectedRoute&&!getAccessToken()?h(Auth,{nav}):route.startsWith("/books/")?h(BookDetail,{id:route.split("/")[2],nav}):isUserProfile?h(Profile,{nav,username:decodeURIComponent(route.slice("/users/".length))}):{
   "/":h(Reels,{nav}),"/explore":h(Explore,{nav}),"/library":h(Library,{nav}),"/profile":h(Profile,{nav}),
   "/create":h(Create,{nav}),"/notifications":h(Notifications,{nav}),"/settings":h(Settings,{nav}),
   "/login":h(Auth,{nav}),"/register":h(Auth,{reg:true,nav})

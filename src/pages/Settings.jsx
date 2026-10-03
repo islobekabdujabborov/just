@@ -11,6 +11,9 @@ const PREFERENCES = [
 
 export default function Settings() {
   const [profile, setProfile] = useState({ bio: "", location: "" });
+  const [currentAvatar, setCurrentAvatar] = useState("");
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
   const [preferences, setPreferences] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("avobook.preferences") || "{}");
@@ -24,9 +27,22 @@ export default function Settings() {
 
   useEffect(() => {
     api.get("/auth/me/")
-      .then((user) => setProfile({ bio: user.bio || "", location: user.location || "" }))
+      .then((user) => {
+        setProfile({ bio: user.bio || "", location: user.location || "" });
+        setCurrentAvatar(user.avatar || "");
+      })
       .catch((reason) => setError(reason.message));
   }, []);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview("");
+      return;
+    }
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [avatarFile]);
 
   const saveProfile = async (event) => {
     event.preventDefault();
@@ -34,8 +50,17 @@ export default function Settings() {
     setError("");
     setNotice("");
     try {
-      const updated = await api.patch("/auth/me/", profile);
+      let payload = profile;
+      if (avatarFile) {
+        payload = new FormData();
+        payload.append("bio", profile.bio);
+        payload.append("location", profile.location);
+        payload.append("avatar", avatarFile);
+      }
+      const updated = await api.patch("/auth/me/", payload);
       setProfile({ bio: updated.bio || "", location: updated.location || "" });
+      setCurrentAvatar(updated.avatar || "");
+      setAvatarFile(null);
       setNotice("Profil ma'lumotlari saqlandi.");
     } catch (reason) {
       setError(reason.message);
@@ -55,6 +80,20 @@ export default function Settings() {
       <h1 className="text-3xl font-extrabold mb-6 text-slate-800">Sozlamalar</h1>
       <form onSubmit={saveProfile} className="glass rounded-2xl p-5 mb-7">
         <h2 className="font-bold text-slate-800 mb-4">Profil ma'lumotlari</h2>
+        <div className="flex items-center gap-4 mb-5">
+          {avatarPreview||currentAvatar?<img src={avatarPreview||currentAvatar} alt="Profil avatari" className="h-16 w-16 rounded-full object-cover"/>:<span className="grid h-16 w-16 place-items-center rounded-full bg-black text-xl font-bold text-white" aria-hidden="true">A</span>}
+          <label className="text-sm font-semibold">
+            Avatar rasmini tanlash
+            <input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={(event)=>{
+              const file=event.target.files?.[0];
+              if(!file)return;
+              const extension=file.name.split(".").pop()?.toLowerCase();
+              if(!["jpg","jpeg","png","webp"].includes(extension)||file.size>8*1024*1024){setError("Avatar JPG, PNG yoki WebP bo'lishi va 8 MB dan oshmasligi kerak.");return;}
+              setError("");
+              setAvatarFile(file);
+            }} className="mt-2 block w-full text-xs"/>
+          </label>
+        </div>
         <Field
           l="O'zim haqimda"
           ph="Qisqacha tanishtiring"

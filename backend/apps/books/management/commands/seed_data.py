@@ -15,8 +15,9 @@ class Command(BaseCommand):
         genres = {name: Genre.objects.get_or_create(name=name, defaults={"slug": name.lower().replace("'", "").replace(" ", "-")})[0] for name in genre_names}
         users = []
         for username, email in [("sardor_ovoz", "sardor@example.uz"), ("dilnoza_reads", "dilnoza@example.uz"), ("kitobxon_uz", "kitobxon@example.uz"), ("audio_jasur", "jasur@example.uz"), ("malika_books", "malika@example.uz")]:
-            user, created = User.objects.get_or_create(username=username, defaults={"email": email, "bio": "AvoBook kitobxonlar hamjamiyati"})
-            if created: user.set_password("AvoBook123!"); user.save()
+            user, _ = User.objects.get_or_create(username=username, defaults={"email": email, "bio": "AvoBook kitobxonlar hamjamiyati"})
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
             users.append(user)
         titles = [
             ("O'tkan kunlar", "Abdulla Qodiriy", "Roman", 45600, 4.9, "Otabek va Kumushning fojiali sevgisi — o'zbek romanchiligining ilk va eng buyuk namunasi."),

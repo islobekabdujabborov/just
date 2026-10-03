@@ -1,5 +1,7 @@
 from django.shortcuts import get_object_or_404
+import math
 from rest_framework import generics, permissions, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from config.permissions import IsOwnerOrReadOnly
@@ -28,7 +30,11 @@ class ChapterListView(generics.ListCreateAPIView):
     serializer_class = ChapterSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     def get_queryset(self): return Chapter.objects.filter(audiobook_id=self.kwargs["pk"]).order_by("order")
-    def perform_create(self, serializer): serializer.save(audiobook=get_object_or_404(Audiobook, pk=self.kwargs["pk"]))
+    def perform_create(self, serializer):
+        audiobook = get_object_or_404(Audiobook, pk=self.kwargs["pk"])
+        if audiobook.created_by_id != self.request.user.id and audiobook.book.owner_id != self.request.user.id:
+            raise PermissionDenied("You can only add chapters to audiobooks you uploaded.")
+        serializer.save(audiobook=audiobook)
 
 class ProgressView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -40,6 +46,13 @@ class ProgressView(APIView):
         audiobook = get_object_or_404(Audiobook, pk=pk)
         chapter_id = request.data.get("chapter")
         chapter = get_object_or_404(Chapter, pk=chapter_id, audiobook=audiobook) if chapter_id else None
+        try:
+            position = int(request.data.get("position", 0))
+            percentage = float(request.data.get("percentage", 0))
+        except (TypeError, ValueError):
+            return Response({"detail": "Position and percentage must be numeric."}, status=400)
+        if position < 0 or not math.isfinite(percentage) or not 0 <= percentage <= 100:
+            return Response({"detail": "Position must be non-negative and percentage must be between 0 and 100."}, status=400)
         progress, _ = ListeningProgress.objects.update_or_create(user=request.user, audiobook=audiobook, defaults={
-            "chapter": chapter, "position": max(0, int(request.data.get("position", 0))), "percentage": min(100, max(0, float(request.data.get("percentage", 0))))})
+            "chapter": chapter, "position": position, "percentage": percentage})
         return Response({"position": progress.position, "percentage": progress.percentage, "chapter": progress.chapter_id})

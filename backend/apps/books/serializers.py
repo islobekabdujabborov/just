@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Author, Book, Genre
+from django.core.validators import FileExtensionValidator
+from .models import Author, Book, Genre, validate_cover
 
 class AuthorSerializer(serializers.ModelSerializer):
     class Meta: model = Author; fields = ["id", "name", "bio"]
@@ -11,7 +12,7 @@ class BookSerializer(serializers.ModelSerializer):
     author = AuthorSerializer(read_only=True)
     author_name = serializers.CharField(write_only=True, required=False)
     genre = serializers.SlugRelatedField(slug_field="name", queryset=Genre.objects.all())
-    cover = serializers.SerializerMethodField()
+    cover = serializers.ImageField(required=False, validators=[validate_cover, FileExtensionValidator(["jpg", "jpeg", "png", "webp"])])
     t = serializers.CharField(source="title", read_only=True)
     a = serializers.CharField(source="author.name", read_only=True)
     g = serializers.CharField(source="genre.name", read_only=True)
@@ -25,9 +26,6 @@ class BookSerializer(serializers.ModelSerializer):
         model = Book
         fields = ["id", "title", "author", "author_name", "cover", "description", "genre", "language", "rating", "duration", "created_at", "updated_at", "t", "a", "g", "r", "d", "dsc", "likes_count", "is_liked", "is_saved"]
         read_only_fields = ["id", "created_at", "updated_at", "likes_count", "is_liked", "is_saved"]
-    def get_cover(self, obj):
-        request = self.context.get("request")
-        return request.build_absolute_uri(obj.cover.url) if obj.cover and request else (obj.cover.url if obj.cover else None)
     def get_d(self, obj):
         return f"{obj.duration // 3600}s {obj.duration % 3600 // 60:02d}d" if obj.duration else ""
     def _has(self, obj, model):

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, getAccessToken, itemsFrom } from "../api";
+import { api, clearTokens, getAccessToken, itemsFrom } from "../api";
 import { Btn, I } from "../components/ui";
 
 export default function Profile({ nav, username }) {
@@ -19,16 +19,19 @@ export default function Profile({ nav, username }) {
       nav("/login");
       return;
     }
-
+    let active = true;
+    setLoading(true);
+    setError("");
     Promise.all([
       username ? api.get(`/users/${encodeURIComponent(username)}/`) : api.get("/auth/me/"),
-      api.get("/reels/"),
+      username ? Promise.resolve(null) : api.get("/reels/"),
       username ? Promise.resolve([]) : api.get("/audiobooks/").catch(() => []),
       username ? Promise.resolve([]) : api.get("/library/liked/").catch(() => []),
-      getAccessToken() ? api.get("/auth/me/").catch(() => null) : Promise.resolve(null),
+      username&&getAccessToken() ? api.get("/auth/me/").catch(() => null) : Promise.resolve(null),
     ])
       .then(([user, payload, audioPayload, likedPayload, currentUser]) => {
-        const userReels = itemsFrom(payload).filter(
+        if (!active) return;
+        const userReels = username ? itemsFrom(user.reels) : itemsFrom(payload).filter(
           (reel) => (reel.author?.username || reel.u) === user.username,
         );
         setProfile(user);
@@ -38,8 +41,9 @@ export default function Profile({ nav, username }) {
         setIsOwnProfile(!username || currentUser?.id === user.id);
         setIsFollowing(Boolean(user.is_following));
       })
-      .catch((reason) => setError(reason.message))
-      .finally(() => setLoading(false));
+      .catch((reason) => {if (active) setError(reason.message);})
+      .finally(() => {if (active) setLoading(false);});
+    return () => {active = false;};
   }, [nav, username]);
 
   const toggleFollow = async () => {
@@ -79,9 +83,7 @@ export default function Profile({ nav, username }) {
   return (
     <div>
       <div className="flex flex-wrap gap-5 items-center mb-6">
-        <div className="h-24 w-24 rounded-full bg-violet-100 grid place-items-center text-2xl font-black text-violet-700">
-          {(profile.username || "A").slice(0, 1).toUpperCase()}
-        </div>
+        {profile.avatar?<img src={profile.avatar} alt={`${profile.username} avatari`} className="h-24 w-24 rounded-full object-cover"/>:<div className="h-24 w-24 rounded-full bg-black grid place-items-center text-2xl font-black text-white">{(profile.username||"A").slice(0,1).toUpperCase()}</div>}
         <div>
           <h1 className="text-2xl font-extrabold text-slate-800">{profile.username}</h1>
           <p className="text-sm text-slate-500">{profile.bio || "Audiokitob o'quvchi"}</p>
@@ -97,6 +99,7 @@ export default function Profile({ nav, username }) {
             {isOwnProfile ? <>
               <Btn on={() => nav("/create")} cn="px-5 py-2 text-sm">Kontent joylash</Btn>
               <Btn v="g" on={() => nav("/settings")} cn="px-4 py-2 text-sm">Profilni tahrirlash</Btn>
+              <Btn v="g" on={() => {clearTokens();nav("/login");}} cn="px-4 py-2 text-sm">Chiqish</Btn>
             </> : <Btn onClick={toggleFollow} disabled={followSubmitting} cn="px-5 py-2 text-sm">
               {followSubmitting ? "Kutilmoqda..." : isFollowing ? "Obunani bekor qilish" : "Obuna bo'lish"}
             </Btn>}

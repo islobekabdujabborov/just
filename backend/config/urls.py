@@ -1,9 +1,14 @@
+import mimetypes
+import re
+from pathlib import Path
 from django.conf import settings
+from django.core.exceptions import SuspiciousFileOperation
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseNotAllowed, JsonResponse, StreamingHttpResponse
+from django.utils._os import safe_join
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -24,6 +29,70 @@ router.register("reels", ReelViewSet, basename="reel")
 
 def health_check(request):
     return JsonResponse({"status": "ok"})
+
+
+def media_serve(request, path):
+    if request.method not in {"GET", "HEAD"}:
+        return HttpResponseNotAllowed(["GET", "HEAD"])
+    try:
+        full_path = safe_join(str(settings.MEDIA_ROOT), path)
+        file_path = Path(full_path)
+        file_size = file_path.stat().st_size
+    except (FileNotFoundError, ValueError, SuspiciousFileOperation):
+        raise Http404
+    if not file_path.is_file():
+        raise Http404
+
+    content_type = mimetypes.guess_type(full_path)[0] or "application/octet-stream"
+    range_header = request.headers.get("Range")
+    if range_header:
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+        if not match or (not match.group(1) and not match.group(2)) or file_size == 0:
+            response = HttpResponse(status=416)
+            response["Content-Range"] = f"bytes */{file_size}"
+            response["Accept-Ranges"] = "bytes"
+            return response
+        try:
+            if match.group(1):
+                start = int(match.group(1))
+                end = int(match.group(2)) if match.group(2) else file_size - 1
+            else:
+                suffix_length = int(match.group(2))
+                start = max(file_size - suffix_length, 0)
+                end = file_size - 1
+        except ValueError:
+            start, end = file_size, file_size
+        end = min(end, file_size - 1)
+        if start >= file_size or start > end:
+            response = HttpResponse(status=416)
+            response["Content-Range"] = f"bytes */{file_size}"
+            response["Accept-Ranges"] = "bytes"
+            return response
+
+        media_file = file_path.open("rb")
+        media_file.seek(start)
+        remaining = end - start + 1
+
+        def stream_range():
+            nonlocal remaining
+            while remaining:
+                chunk = media_file.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+        response = StreamingHttpResponse(stream_range(), status=206, content_type=content_type)
+        response._resource_closers.append(media_file.close)
+        response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        response["Content-Length"] = str(end - start + 1)
+    elif request.method == "HEAD":
+        response = HttpResponse(content_type=content_type)
+        response["Content-Length"] = str(file_size)
+    else:
+        response = FileResponse(file_path.open("rb"), content_type=content_type)
+    response["Accept-Ranges"] = "bytes"
+    return response
 
 
 urlpatterns = [
@@ -54,7 +123,9 @@ urlpatterns = [
     path("api/", include(router.urls)), path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+urlpatterns += [
+    re_path(r"^media/(?P<path>.*)$", media_serve),
+]
 
 urlpatterns += [
     path("", TemplateView.as_view(template_name="index.html"), name="frontend"),

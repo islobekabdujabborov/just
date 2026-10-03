@@ -4,6 +4,17 @@ import {Btn,Drop,Field} from "../components/ui";
 
 const GENRES=["Roman","Detektiv","Fantastika","Biznes","Psixologiya","Tarix","Ta'lim","Sarguzasht","She'r"];
 
+function useObjectUrl(file){
+    const [url,setUrl]=useState("");
+    useEffect(()=>{
+        if(!file){setUrl("");return;}
+        const objectUrl=URL.createObjectURL(file);
+        setUrl(objectUrl);
+        return()=>URL.revokeObjectURL(objectUrl);
+    },[file]);
+    return url;
+}
+
 export default function Create() {
     const [mode, setMode] = useState("reel");
     const [values, setValues] = useState({ title: "", author: "", genre: "Roman", description: "", caption: "" });
@@ -13,6 +24,9 @@ export default function Create() {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const videoPreview = useObjectUrl(video);
+    const coverPreview = useObjectUrl(cover);
+    const audioPreview = useObjectUrl(audioFile);
 
     const update = (event) => {
         const { name, value } = event.target;
@@ -35,6 +49,19 @@ export default function Create() {
         }
         if (mode === "book" && !audioFile) {
             setError("Audiokitob uchun audio fayl tanlang.");
+            return;
+        }
+        const extension = (file) => file?.name.split(".").pop()?.toLowerCase() || "";
+        if (cover && (!(["jpg", "jpeg", "png", "webp"].includes(extension(cover))) || cover.size > 8 * 1024 * 1024)) {
+            setError("Muqova JPG, PNG yoki WebP bo'lishi va 8 MB dan oshmasligi kerak.");
+            return;
+        }
+        if (video && (!(["mp4", "mov", "webm"].includes(extension(video))) || video.size > 100 * 1024 * 1024)) {
+            setError("Video MP4, MOV yoki WebM bo'lishi va 100 MB dan oshmasligi kerak.");
+            return;
+        }
+        if (audioFile && (!(["mp3", "m4a", "wav", "ogg"].includes(extension(audioFile))) || audioFile.size > 100 * 1024 * 1024)) {
+            setError("Audio MP3, M4A, WAV yoki OGG bo'lishi va 100 MB dan oshmasligi kerak.");
             return;
         }
 
@@ -71,9 +98,6 @@ export default function Create() {
                 setCover(null);
                 setAudioFile(null);
 
-                if (created?.id) {
-                    window.location.hash = "#/profile";
-                }
             }
 
             if (mode === "book") {
@@ -97,11 +121,11 @@ export default function Create() {
         <div>
             <h1 className="text-3xl font-extrabold mb-5">Yaratish</h1>
 
-            <div className="flex gap-2 mb-6">
-                <Btn cn={`px-5 py-2 text-sm ${mode === "reel" ? "" : "opacity-75"}`} on={() => setMode("reel")}>
+            <div className="flex flex-wrap gap-2 mb-6">
+                <Btn disabled={submitting} cn={`px-5 py-2 text-sm ${mode === "reel" ? "" : "opacity-75"}`} on={() => setMode("reel")}>
                     Reel yaratish
                 </Btn>
-                <Btn v="g" cn={`px-5 py-2 text-sm ${mode === "book" ? "" : "opacity-75"}`} on={() => setMode("book")}>
+                <Btn v="g" disabled={submitting} cn={`px-5 py-2 text-sm ${mode === "book" ? "" : "opacity-75"}`} on={() => setMode("book")}>
                     Audio kitob yuklash
                 </Btn>
             </div>
@@ -111,17 +135,22 @@ export default function Create() {
                     {mode === "reel" && (
                         <Drop
                             l="Video yuklash"
-                            accept="video/mp4,video/webm,video/quicktime"
+                            key={video?.name||"video"}
+                            accept=".mp4,.mov,.webm,video/mp4,video/webm,video/quicktime"
                             onChange={(event) => setVideo(event.target.files?.[0] || null)}
                         />
                     )}
 
                     <Drop
                         l="Kitob muqovasi"
-                        accept="image/*"
+                        key={cover?.name||"cover"}
+                        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                         onChange={(event) => setCover(event.target.files?.[0] || null)}
                     />
                 </div>
+
+                {videoPreview&&<video src={videoPreview} controls muted playsInline preload="metadata" className="mb-4 max-h-72 w-full rounded-xl bg-black object-contain" aria-label="Tanlangan video ko'rinishi"/>}
+                {coverPreview&&<img src={coverPreview} alt="Tanlangan kitob muqovasi" className="mb-4 h-40 w-32 rounded-xl object-cover"/>}
 
                 <div className="glass rounded-3xl p-5">
                     <Field
@@ -186,10 +215,12 @@ export default function Create() {
                             <span className="text-xs text-slate-600">Audio fayl (mp3)</span>
                             <input
                                 type="file"
-                                accept="audio/*"
+                                key={audioFile?.name||"audio"}
+                                accept=".mp3,.m4a,.wav,.ogg,audio/mpeg,audio/mp4,audio/wav,audio/ogg"
                                 onChange={(event) => setAudioFile(event.target.files?.[0] || null)}
                                 className="mt-1 w-full glass rounded-xl px-4 py-3 outline-none text-slate-800"
                             />
+                            {audioPreview&&<audio src={audioPreview} controls preload="metadata" className="mt-3 w-full" aria-label="Tanlangan audio ko'rinishi"/>}
                         </label>
                     )}
 
