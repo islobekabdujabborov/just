@@ -10,3 +10,21 @@ class Notification(models.Model):
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     class Meta: ordering = ["-created_at"]
+
+    @staticmethod
+    def should_send(recipient, notification_type):
+        if not recipient or not getattr(recipient, "notification_preferences", None):
+            return True
+        preferences = recipient.notification_preferences
+        if not isinstance(preferences, dict):
+            return True
+        mapping = {
+            "follow": "newFollowers",
+            "like": "likeComments",
+            "comment": "likeComments",
+            "save": "newBooks",
+        }
+        key = mapping.get(notification_type)
+        if not key:
+            return True
+        return preferences.get(key, True) is not False

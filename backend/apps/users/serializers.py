@@ -16,12 +16,16 @@ class UserSerializer(serializers.ModelSerializer):
     posts_count = serializers.IntegerField(source="reels.count", read_only=True)
     avatar = serializers.SerializerMethodField()
     notification_preferences = serializers.JSONField(required=False, default=dict)
+    private_account = serializers.BooleanField(read_only=True)
     class Meta:
         model = User
-        fields = ["id", "username", "avatar", "bio", "location", "followers_count", "following_count", "posts_count", "notification_preferences"]
-        read_only_fields = ["id", "followers_count", "following_count", "posts_count"]
+        fields = ["id", "username", "avatar", "bio", "location", "followers_count", "following_count", "posts_count", "notification_preferences", "private_account"]
+        read_only_fields = ["id", "followers_count", "following_count", "posts_count", "private_account"]
     def get_avatar(self, obj):
-        return self.context["request"].build_absolute_uri(obj.avatar.url) if obj.avatar else None
+        request = self.context.get("request")
+        if not obj.avatar:
+            return None
+        return request.build_absolute_uri(obj.avatar.url) if request else obj.avatar.url
 
 class PrivateUserSerializer(UserSerializer):
     avatar = serializers.ImageField(required=False, validators=[

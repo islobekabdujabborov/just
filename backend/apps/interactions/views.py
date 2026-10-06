@@ -20,7 +20,7 @@ class InteractionView(APIView):
         obj = self.target(pk)
         _, created = self.model.objects.get_or_create(user=request.user, **{self.target_field: obj})
         owner = getattr(obj, "author", None)
-        if created and self.notification_type and owner and owner.id != request.user.id:
+        if created and self.notification_type and owner and owner.id != request.user.id and Notification.should_send(owner, self.notification_type):
             Notification.objects.create(recipient=owner, actor=request.user, type=self.notification_type, text=f"@{request.user.username} {self.notification_type}d your post")
         return Response({self.result_key: True, "likes_count" if self.result_key == "is_liked" else "saves_count": self.count(obj)})
     def delete(self, request, pk):

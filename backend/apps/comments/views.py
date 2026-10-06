@@ -17,7 +17,7 @@ class ReelCommentsView(generics.ListCreateAPIView):
         parent_id = self.request.data.get("parent")
         parent = get_object_or_404(Comment, pk=parent_id, reel=reel) if parent_id else None
         comment = serializer.save(user=self.request.user, reel=reel, parent=parent)
-        if reel.author_id != self.request.user.id:
+        if reel.author_id != self.request.user.id and Notification.should_send(reel.author, "comment"):
             Notification.objects.create(recipient=reel.author, actor=self.request.user, type="comment", text=f"@{self.request.user.username}: {comment.text[:180]}")
 
 class CommentDeleteView(generics.DestroyAPIView):
@@ -31,7 +31,9 @@ class CommentLikeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, pk):
         comment = get_object_or_404(Comment, pk=pk)
-        CommentLike.objects.get_or_create(user=request.user, comment=comment)
+        _, created = CommentLike.objects.get_or_create(user=request.user, comment=comment)
+        if created and comment.user_id != request.user.id and Notification.should_send(comment.user, "like"):
+            Notification.objects.create(recipient=comment.user, actor=request.user, type="like", text=f"@{request.user.username} liked your comment")
         return Response({"is_liked": True, "likes_count": comment.likes.count()})
     def delete(self, request, pk):
         comment = get_object_or_404(Comment, pk=pk)

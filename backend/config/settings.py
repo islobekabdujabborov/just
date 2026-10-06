@@ -22,8 +22,18 @@ if not DEBUG and not SECRET_KEY:
 if not DEBUG and SECRET_KEY == "unsafe-development-key-change-me":
     raise ImproperlyConfigured("Set SECRET_KEY to a non-default value before running production.")
 
+
+def normalize_domain(value):
+    value = value.strip()
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value.rstrip("/")
+    return f"https://{value.rstrip('/')}"
+
+
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
-RAILWAY_PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+RAILWAY_PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip().replace("http://", "").replace("https://", "")
 if RAILWAY_PUBLIC_DOMAIN and RAILWAY_PUBLIC_DOMAIN not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RAILWAY_PUBLIC_DOMAIN)
 
@@ -99,10 +109,12 @@ MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(BASE_DIR / "media")))
 if not MEDIA_ROOT.is_absolute():
     MEDIA_ROOT = BASE_DIR / MEDIA_ROOT
 
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
-CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS = [normalize_domain(origin) for origin in env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")]
+CSRF_TRUSTED_ORIGINS = [normalize_domain(origin) for origin in env_list("CSRF_TRUSTED_ORIGINS", "")]
 if RAILWAY_PUBLIC_DOMAIN:
-    railway_origin = f"https://{RAILWAY_PUBLIC_DOMAIN}"
+    railway_origin = normalize_domain(RAILWAY_PUBLIC_DOMAIN)
+    if railway_origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(railway_origin)
     if railway_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(railway_origin)
 
@@ -110,6 +122,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+SECURE_REFERRER_POLICY = "same-origin"
 if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
