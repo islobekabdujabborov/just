@@ -7,6 +7,7 @@ class User(AbstractUser):
     avatar = models.ImageField(upload_to="avatars/", blank=True)
     bio = models.CharField(max_length=500, blank=True)
     location = models.CharField(max_length=120, blank=True)
+    notification_preferences = models.JSONField(default=dict, blank=True)
     REQUIRED_FIELDS = ["email"]
 
     @property

@@ -1,8 +1,8 @@
 import React,{useEffect,useRef,useState} from "react";
-import {GEN} from "../data/mock";
 import {I,Row} from "../components/ui";
 import {api,itemsFrom} from "../api";
 
+const DEFAULT_GENRES=["Roman","Detektiv","Fantastika","Biznes","Psixologiya","Tarix","Ta'lim","Sarguzasht","She'r"];
 const genrePalette=[
  {bg:"bg-violet-500/90",icon:"book"},{bg:"bg-indigo-500/90",icon:"search"},
  {bg:"bg-fuchsia-500/90",icon:"star"},{bg:"bg-emerald-500/90",icon:"play"},
@@ -43,7 +43,7 @@ export default function Explore({nav}){
   return()=>clearTimeout(timer);
  },[query]);
 
- const genres=itemsFrom(sections.genres).length?itemsFrom(sections.genres):GEN.map(name=>({name}));
+ const genres=itemsFrom(sections.genres).length?itemsFrom(sections.genres):DEFAULT_GENRES.map(name=>({name}));
  const books=itemsFrom(results?.books);
  const users=itemsFrom(results?.users);
  const reels=itemsFrom(results?.reels);

@@ -60,6 +60,21 @@ class UserProfileApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["avatar"].endswith("/media/avatars/avatar.png"))
 
+    def test_current_user_keeps_notification_preferences_server_side(self):
+        self.client.force_authenticate(self.viewer)
+
+        response = self.client.patch("/api/auth/me/", {
+            "notification_preferences": {"likeComments": False, "newFollowers": True, "newBooks": True, "privateAccount": False},
+        }, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["notification_preferences"]["likeComments"])
+        self.assertTrue(response.data["notification_preferences"]["newFollowers"])
+
+        fresh = self.client.get("/api/auth/me/")
+        self.assertEqual(fresh.status_code, 200)
+        self.assertFalse(fresh.data["notification_preferences"]["likeComments"])
+
     def test_registration_rejects_common_password(self):
         response = self.client.post("/api/auth/register/", {
             "username": "new-reader",

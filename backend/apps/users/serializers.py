@@ -15,9 +15,10 @@ class UserSerializer(serializers.ModelSerializer):
     following_count = serializers.IntegerField(read_only=True)
     posts_count = serializers.IntegerField(source="reels.count", read_only=True)
     avatar = serializers.SerializerMethodField()
+    notification_preferences = serializers.JSONField(required=False, default=dict)
     class Meta:
         model = User
-        fields = ["id", "username", "avatar", "bio", "location", "followers_count", "following_count", "posts_count"]
+        fields = ["id", "username", "avatar", "bio", "location", "followers_count", "following_count", "posts_count", "notification_preferences"]
         read_only_fields = ["id", "followers_count", "following_count", "posts_count"]
     def get_avatar(self, obj):
         return self.context["request"].build_absolute_uri(obj.avatar.url) if obj.avatar else None

@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, getAccessToken } from "../api";
 import { Btn, Field } from "../components/ui";
+
+const DEFAULT_PREFERENCES = {
+  likeComments: true,
+  newFollowers: true,
+  newBooks: true,
+  privateAccount: false,
+};
 
 const PREFERENCES = [
   ["likeComments", "Like va izohlar"],
@@ -14,22 +21,28 @@ export default function Settings() {
   const [currentAvatar, setCurrentAvatar] = useState("");
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState("");
-  const [preferences, setPreferences] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("avobook.preferences") || "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    const localPrefs = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("avobook.preferences") || "{}");
+      } catch {
+        return {};
+      }
+    })();
+    setPreferences({ ...DEFAULT_PREFERENCES, ...localPrefs });
+
     api.get("/auth/me/")
       .then((user) => {
+        const nextPrefs = { ...DEFAULT_PREFERENCES, ...(user.notification_preferences || {}) };
         setProfile({ bio: user.bio || "", location: user.location || "" });
         setCurrentAvatar(user.avatar || "");
+        setPreferences(nextPrefs);
+        localStorage.setItem("avobook.preferences", JSON.stringify(nextPrefs));
       })
       .catch((reason) => setError(reason.message));
   }, []);
@@ -50,16 +63,19 @@ export default function Settings() {
     setError("");
     setNotice("");
     try {
-      let payload = profile;
+      let payload = { ...profile, notification_preferences: preferences };
       if (avatarFile) {
         payload = new FormData();
         payload.append("bio", profile.bio);
         payload.append("location", profile.location);
+        payload.append("notification_preferences", JSON.stringify(preferences));
         payload.append("avatar", avatarFile);
       }
       const updated = await api.patch("/auth/me/", payload);
       setProfile({ bio: updated.bio || "", location: updated.location || "" });
       setCurrentAvatar(updated.avatar || "");
+      setPreferences({ ...DEFAULT_PREFERENCES, ...(updated.notification_preferences || preferences) });
+      localStorage.setItem("avobook.preferences", JSON.stringify({ ...DEFAULT_PREFERENCES, ...(updated.notification_preferences || preferences) }));
       setAvatarFile(null);
       setNotice("Profil ma'lumotlari saqlandi.");
     } catch (reason) {
@@ -69,10 +85,18 @@ export default function Settings() {
     }
   };
 
-  const togglePreference = (key) => {
-    const updated = { ...preferences, [key]: !(preferences[key] ?? true) };
+  const togglePreference = async (key) => {
+    const updated = { ...preferences, [key]: !(preferences[key] ?? DEFAULT_PREFERENCES[key]) };
     setPreferences(updated);
     localStorage.setItem("avobook.preferences", JSON.stringify(updated));
+    if (!getAccessToken()) return;
+    try {
+      const result = await api.patch("/auth/me/", { notification_preferences: updated });
+      setPreferences({ ...DEFAULT_PREFERENCES, ...(result.notification_preferences || updated) });
+      localStorage.setItem("avobook.preferences", JSON.stringify({ ...DEFAULT_PREFERENCES, ...(result.notification_preferences || updated) }));
+    } catch (reason) {
+      setError(reason.message);
+    }
   };
 
   return (
@@ -115,7 +139,7 @@ export default function Settings() {
 
       <section className="glass rounded-2xl divide-y divide-slate-200">
         {PREFERENCES.map(([key, label]) => {
-          const enabled = preferences[key] ?? true;
+          const enabled = preferences[key] ?? DEFAULT_PREFERENCES[key];
           return (
             <div key={key} className="flex items-center justify-between gap-4 px-4 py-3">
               <span className="text-sm font-medium text-slate-700">{label}</span>

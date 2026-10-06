@@ -1,7 +1,8 @@
 import React,{useEffect,useRef,useState} from "react";
-import {G} from "../data/mock";
 import {Btn,I} from "../components/ui";
 import {api,itemsFrom} from "../api";
+
+const GRADIENTS=["from-violet-600 to-fuchsia-700","from-indigo-600 to-violet-800","from-emerald-600 to-teal-800","from-rose-600 to-purple-800","from-amber-500 to-rose-700","from-sky-600 to-indigo-800"];
 
 export default function Reels({nav}){
  const [reels,setReels]=useState([]);
@@ -56,7 +57,6 @@ export default function Reels({nav}){
    }
   }catch(reason){setError(reason.message);}
  };
-
  const openComments=async reel=>{
   setComments(reel);
   setCommentText("");
@@ -82,7 +82,7 @@ export default function Reels({nav}){
  return <div ref={feedRef} className="snap h-[100dvh] overflow-y-auto md:m-0">
   {error&&<p role="alert" className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-rose-950 px-4 py-2 text-sm text-rose-100">{error}</p>}
   {reels.map(reel=><div key={reel.id} className="snapi h-[100dvh] md:h-[calc(100dvh-2rem)] md:mb-4 md:rounded-3xl relative overflow-hidden flex">
-   <div className={`absolute inset-0 bg-gradient-to-br ${G[(reel.id-1)%6]} opacity-70`}/>
+   <div className={`absolute inset-0 bg-gradient-to-br ${GRADIENTS[(reel.id-1)%GRADIENTS.length]} opacity-70`}/>
    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/50"/>
     {reel.video_url||reel.video?<video data-reel-id={reel.id} src={reel.video_url||reel.video} muted={muted} loop playsInline preload="none" onPlay={()=>setPlaying(previous=>({...previous,[reel.id]:true}))} onPause={()=>setPlaying(previous=>({...previous,[reel.id]:false}))} onError={()=>setVideoErrors(previous=>({...previous,[reel.id]:true}))} className={`absolute inset-0 h-full w-full object-cover ${videoErrors[reel.id]?"hidden":""}`}/>:null}
     {!reel.video_url&&!reel.video&&<p className="absolute inset-0 grid place-items-center text-sm text-white/80">Bu reelda video mavjud emas.</p>}

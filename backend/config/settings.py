@@ -14,11 +14,13 @@ def env_list(name, default=""):
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
-SECRET_KEY = os.getenv("SECRET_KEY", "unsafe-development-key-change-me")
-DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+DEBUG = os.getenv("DEBUG", "False").strip().lower() in {"1", "true", "yes", "on"}
+SECRET_KEY = os.getenv("SECRET_KEY") or ("unsafe-development-key-change-me" if DEBUG else "")
 
-if not DEBUG and SECRET_KEY == "unsafe-development-key-change-me":
+if not DEBUG and not SECRET_KEY:
     raise ImproperlyConfigured("Set SECRET_KEY in the production environment.")
+if not DEBUG and SECRET_KEY == "unsafe-development-key-change-me":
+    raise ImproperlyConfigured("Set SECRET_KEY to a non-default value before running production.")
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1")
 RAILWAY_PUBLIC_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
