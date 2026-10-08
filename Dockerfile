@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html vite.config.js postcss.config.js tailwind.config.js ./
 COPY src ./src
+COPY public ./public
 RUN npm run build
 
 # Django runtime

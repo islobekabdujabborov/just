@@ -21,6 +21,10 @@ npm run dev
 
 Frontend API so'rovlarini lokal Django serveriga proxy qiladi. Kerak bo'lsa, `VITE_API_URL` orqali API manzilini o'zgartiring.
 
+## Brauzerdan ilovani o'rnatish
+
+Saytni HTTPS manzilda oching (yoki lokal ishlab chiqishda `localhost`dan foydalaning), so'ng **Ilovani o'rnatish** tugmasini bosing. Tugma ko'rinmasa, brauzer menyusidan **Ilovani o'rnatish** yoki **Bosh ekranga qo'shish** bandini tanlang. O'rnatilgan ilova qurilmadagi ilovalar ro'yxatidan alohida oynada ishga tushadi.
+
 ## Railway deploy
 
 Railway loyihasiga GitHub repository'ni ulang. Root'dagi `Dockerfile` frontend build va Django serverini bitta service sifatida tayyorlaydi; migratsiyalar container ishga tushganda bajariladi.

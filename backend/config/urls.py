@@ -31,6 +31,14 @@ def health_check(request):
     return JsonResponse({"status": "ok"})
 
 
+def service_worker(request):
+    worker_path = settings.PROJECT_ROOT / "dist" / "service-worker.js"
+    response = FileResponse(worker_path.open("rb"), content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 def media_serve(request, path):
     if request.method not in {"GET", "HEAD"}:
         return HttpResponseNotAllowed(["GET", "HEAD"])
@@ -98,6 +106,7 @@ def media_serve(request, path):
 urlpatterns = [
     path("health/", health_check, name="health"),
     path("api/health/", health_check, name="api-health"),
+    path("service-worker.js", service_worker, name="service-worker"),
     path("admin/", admin.site.urls),
     path("api/auth/register/", RegisterView.as_view()),
     path("api/auth/login/", LoginView.as_view()),
