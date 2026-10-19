@@ -1,5 +1,9 @@
 from datetime import timedelta
+import os
+import tempfile
 
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -8,6 +12,66 @@ from apps.comments.models import Comment
 from apps.interactions.models import Like, Save
 from apps.users.models import Follow, User
 from .models import Reel
+
+
+class ReelDeleteApiTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username="reel-owner",
+            email="reel-owner@example.com",
+            password="secure-pass-123",
+        )
+        self.other_user = User.objects.create_user(
+            username="other-reader",
+            email="other-reader@example.com",
+            password="secure-pass-123",
+        )
+        self.reel = Reel.objects.create(author=self.owner, caption="Delete this reel")
+        self.url = f"/api/reels/{self.reel.id}/"
+
+    def test_reel_owner_can_delete_reel_and_video_file(self):
+        with tempfile.TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            reel = Reel.objects.create(
+                author=self.owner,
+                caption="Reel with video",
+                video=SimpleUploadedFile("sample.mp4", b"video bytes", content_type="video/mp4"),
+            )
+            video_path = reel.video.path
+            self.client.force_authenticate(self.owner)
+
+            response = self.client.delete(f"/api/reels/{reel.id}/")
+
+            self.assertEqual(response.status_code, 204)
+            self.assertFalse(Reel.objects.filter(pk=reel.pk).exists())
+            self.assertFalse(os.path.exists(video_path))
+
+    def test_replacing_reel_video_removes_previous_file(self):
+        with tempfile.TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            reel = Reel.objects.create(
+                author=self.owner,
+                video=SimpleUploadedFile("first.mp4", b"first video", content_type="video/mp4"),
+            )
+            previous_path = reel.video.path
+
+            reel.video = SimpleUploadedFile("second.mp4", b"second video", content_type="video/mp4")
+            reel.save()
+
+            self.assertFalse(os.path.exists(previous_path))
+            self.assertTrue(os.path.exists(reel.video.path))
+
+    def test_other_user_cannot_delete_reel(self):
+        self.client.force_authenticate(self.other_user)
+
+        response = self.client.delete(self.url)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Reel.objects.filter(pk=self.reel.pk).exists())
+
+    def test_anonymous_user_cannot_delete_reel(self):
+        response = self.client.delete(self.url)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertTrue(Reel.objects.filter(pk=self.reel.pk).exists())
 
 
 class FollowingReelFeedApiTests(APITestCase):

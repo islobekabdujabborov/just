@@ -1,15 +1,21 @@
 import tempfile
+from types import SimpleNamespace
 from io import BytesIO
+from unittest.mock import AsyncMock, patch
 
+from asgiref.sync import async_to_sync
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
+from apps.telegram_bot.handlers import start_command
 from apps.notifications.models import Notification
 from apps.reels.models import Reel
 from apps.users.models import TelegramVerification
@@ -121,6 +127,9 @@ class UserProfileApiTests(APITestCase):
 
 @override_settings(TELEGRAM_BOT_USERNAME="sample_bot", TELEGRAM_BOT_TOKEN="test-bot-token")
 class TelegramVerificationApiTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+
     def start_verification(self, username="telegram-user", email="telegram@example.com"):
         response = self.client.post("/api/auth/telegram/start/", {
             "username": username,
@@ -148,6 +157,69 @@ class TelegramVerificationApiTests(APITestCase):
         self.assertEqual(response.data["status"], "verified")
         self.assertTrue(User.objects.filter(username="telegram-user").exists())
         self.assertTrue(User.objects.filter(email="telegram@example.com").exists())
+
+    def test_new_telegram_payload_cancels_other_active_verifications(self):
+        first_data = self.start_verification(username="telegram-user-first", email="telegram-first@example.com")
+        second_data = self.start_verification(username="telegram-user-second", email="telegram-second@example.com")
+        new_data = self.start_verification(username="telegram-user-third", email="telegram-third@example.com")
+        telegram_user_id = 987654321
+
+        first_link = link_telegram_account(first_data["deep_link"].split("start=")[-1], telegram_user_id)
+        pending_verification = TelegramVerification.objects.get(
+            session_token_hash=TelegramVerification.hash_value(second_data["verification_token"])
+        )
+        pending_verification.telegram_user_id = telegram_user_id
+        pending_verification.save(update_fields=["telegram_user_id", "updated_at"])
+
+        result = link_telegram_account(new_data["deep_link"].split("start=")[-1], telegram_user_id)
+
+        self.assertEqual(result["status"], TelegramVerification.STATUS_LINKED)
+        self.assertIsNotNone(result["code"])
+        self.assertEqual(
+            TelegramVerification.objects.get(pk=first_link["verification_id"]).status,
+            TelegramVerification.STATUS_CANCELLED,
+        )
+        pending_verification.refresh_from_db()
+        self.assertEqual(pending_verification.status, TelegramVerification.STATUS_CANCELLED)
+
+    def test_start_command_shows_validation_error_message(self):
+        reply_text = AsyncMock()
+        update = SimpleNamespace(
+            message=SimpleNamespace(reply_text=reply_text),
+            effective_user=SimpleNamespace(id=987654321, username="reader"),
+        )
+        context = SimpleNamespace(args=["test-payload"])
+
+        with patch(
+            "apps.telegram_bot.handlers.link_telegram_account",
+            side_effect=ValidationError("Havola yaroqsiz yoki muddati tugagan."),
+        ):
+            async_to_sync(start_command)(update, context)
+
+        reply_text.assert_awaited_once_with("Havola yaroqsiz yoki muddati tugagan.")
+
+    def test_start_command_hides_unexpected_error_and_redacts_secrets_from_log(self):
+        payload = "private-verification-payload"
+        reply_text = AsyncMock()
+        update = SimpleNamespace(
+            message=SimpleNamespace(reply_text=reply_text),
+            effective_user=SimpleNamespace(id=987654321, username="reader"),
+        )
+        context = SimpleNamespace(args=[payload])
+        error_message = f"failed for {payload} with code 123456"
+
+        with patch(
+            "apps.telegram_bot.handlers.link_telegram_account",
+            side_effect=RuntimeError(error_message),
+        ), self.assertLogs("apps.telegram_bot.handlers", level="WARNING") as captured:
+            async_to_sync(start_command)(update, context)
+
+        reply_text.assert_awaited_once_with("Xatolik yuz berdi, keyinroq urinib ko'ring")
+        logged_message = "\n".join(captured.output)
+        self.assertIn("RuntimeError", logged_message)
+        self.assertIn("failed for [REDACTED] with code [REDACTED]", logged_message)
+        self.assertNotIn(payload, logged_message)
+        self.assertNotIn("123456", logged_message)
 
     def test_invalid_code_increments_attempts(self):
         session_data = self.start_verification(username="telegram-user-2", email="telegram2@example.com")

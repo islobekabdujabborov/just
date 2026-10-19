@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import re
 
+from rest_framework.exceptions import ValidationError
 from telegram import Update
 from telegram.error import Forbidden, NetworkError, RetryAfter, TelegramError
 from telegram.ext import ContextTypes
@@ -46,9 +48,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         linked = link_telegram_account(payload, update.effective_user.id if update.effective_user else 0, update.effective_user.username if update.effective_user else "")
+    except ValidationError as exc:
+        detail = exc.detail
+        if isinstance(detail, dict):
+            detail = next(iter(detail.values()), "Havola yaroqsiz yoki muddati tugagan.")
+        if isinstance(detail, (list, tuple)):
+            detail = detail[0] if detail else "Havola yaroqsiz yoki muddati tugagan."
+        await _reply_error(update, str(detail))
+        return
     except Exception as exc:
-        logger.warning("Telegram account link failed (%s).", type(exc).__name__)
-        await _reply_error(update, "Havola yaroqsiz yoki muddati tugagan. AvoBook saytiga qaytib yangi tasdiqlashni boshlang.")
+        message = str(exc).replace(payload, "[REDACTED]")
+        message = re.sub(r"\b\d{6}\b", "[REDACTED]", message)
+        logger.warning("Telegram account link failed (%s): %s", type(exc).__name__, message)
+        await _reply_error(update, "Xatolik yuz berdi, keyinroq urinib ko'ring")
         return
 
     code = linked.get("code")

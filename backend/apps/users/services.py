@@ -164,25 +164,24 @@ def link_telegram_account(payload: str, telegram_user_id: int, telegram_username
             error_message = "Tasdiqlash sessiyasi muddati tugagan."
         elif verification.status in {TelegramVerification.STATUS_VERIFIED, TelegramVerification.STATUS_CANCELLED}:
             error_message = "Tasdiqlash allaqachon yakunlangan."
+        elif verification.telegram_user_id and verification.telegram_user_id != telegram_user_id:
+            error_message = "Bu Telegram akkaunti ushbu sessiya uchun mos kelmayapti."
         else:
-            existing = TelegramVerification.objects.filter(
+            TelegramVerification.objects.filter(
                 telegram_user_id=telegram_user_id,
                 status__in={TelegramVerification.STATUS_PENDING, TelegramVerification.STATUS_LINKED},
-            ).exclude(pk=verification.pk).first()
-            if existing is not None:
-                error_message = "Bu Telegram akkaunti boshqa tasdiqlash sessiyasiga bog'langan."
-            elif verification.telegram_user_id and verification.telegram_user_id != telegram_user_id:
-                error_message = "Bu Telegram akkaunti ushbu sessiya uchun mos kelmayapti."
+            ).exclude(pk=verification.pk).update(
+                status=TelegramVerification.STATUS_CANCELLED,
+                updated_at=timezone.now(),
+            )
+            if verification.telegram_user_id == telegram_user_id and verification.code_hash and verification.code_expires_at and verification.code_expires_at > timezone.now() and not verification.code_used_at:
+                code = None
             else:
-                if verification.telegram_user_id == telegram_user_id and verification.code_hash and verification.code_expires_at and verification.code_expires_at > timezone.now() and not verification.code_used_at:
-                    code = None
-                else:
-                    code = _generate_new_code(verification)
-                verification.telegram_user_id = telegram_user_id
-                verification.telegram_username = (telegram_username or "")[:255]
-                verification.status = TelegramVerification.STATUS_LINKED
-                verification.save(update_fields=["telegram_user_id", "telegram_username", "status", "updated_at", "code_hash", "code_expires_at", "code_used_at", "attempts"])
-                verification = verification
+                code = _generate_new_code(verification)
+            verification.telegram_user_id = telegram_user_id
+            verification.telegram_username = (telegram_username or "")[:255]
+            verification.status = TelegramVerification.STATUS_LINKED
+            verification.save(update_fields=["telegram_user_id", "telegram_username", "status", "updated_at", "code_hash", "code_expires_at", "code_used_at", "attempts"])
     if error_message:
         verification_error(error_message)
     return {"verification_id": verification.id, "status": verification.status, "code": code if code is not None else None}

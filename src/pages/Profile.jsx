@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, clearTokens, getAccessToken, itemsFrom } from "../api";
-import { Btn, I } from "../components/ui";
+import { Btn, ConfirmDialog, I } from "../components/ui";
 
 export default function Profile({ nav, username }) {
   const [selected, setSelected] = useState(0);
@@ -9,10 +9,13 @@ export default function Profile({ nav, username }) {
   const [audiobooks, setAudiobooks] = useState([]);
   const [likedBooks, setLikedBooks] = useState([]);
   const [isOwnProfile, setIsOwnProfile] = useState(!username);
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followSubmitting, setFollowSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [confirmTarget, setConfirmTarget] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   useEffect(() => {
     if (!username && !getAccessToken()) {
@@ -38,6 +41,7 @@ export default function Profile({ nav, username }) {
         setReels(userReels);
         setAudiobooks(itemsFrom(audioPayload));
         setLikedBooks(itemsFrom(likedPayload));
+        setCurrentUserId(username ? currentUser?.id || null : user.id);
         setIsOwnProfile(!username || currentUser?.id === user.id);
         setIsFollowing(Boolean(user.is_following));
       })
@@ -62,6 +66,23 @@ export default function Profile({ nav, username }) {
       setError(reason.message);
     } finally {
       setFollowSubmitting(false);
+    }
+  };
+
+  const deleteOwnedItem = async (item, type) => {
+    setConfirmBusy(true);
+    try {
+      await api.delete(type === "reel" ? `/reels/${item.id}/` : `/audiobooks/${item.id}/`);
+      if (type === "reel") {
+        setReels((current) => current.filter((reel) => reel.id !== item.id));
+      } else {
+        setAudiobooks((current) => current.filter((audiobook) => audiobook.id !== item.id));
+      }
+      setConfirmTarget(null);
+    } catch {
+      setError(type === "reel" ? "Postni o'chirib bo'lmadi. Qayta urinib ko'ring." : "Audiokitobni o'chirib bo'lmadi. Qayta urinib ko'ring.");
+    } finally {
+      setConfirmBusy(false);
     }
   };
 
@@ -127,31 +148,44 @@ export default function Profile({ nav, username }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {selected === 0 ? reels.map((reel) => (
-            <button
-              key={reel.id}
-              type="button"
-              onClick={() => reel.book?.id && nav(`/books/${reel.book.id}`)}
-              className="aspect-[3/4] rounded-xl bg-slate-100 relative overflow-hidden flex items-center justify-center text-center p-3"
-            >
-              <span className="text-sm font-semibold text-slate-700">{reel.caption || "Reel"}</span>
-            </button>
+            <div key={reel.id} className="relative">
+              <button
+                type="button"
+                onClick={() => reel.book?.id && nav(`/books/${reel.book.id}`)}
+                className="aspect-[3/4] w-full rounded-xl bg-slate-100 relative overflow-hidden flex items-center justify-center text-center p-3"
+              >
+                <span className="text-sm font-semibold text-slate-700">{reel.caption || "Reel"}</span>
+              </button>
+              {isOwnProfile && String(currentUserId) === String(reel.author?.id) && <button type="button" aria-label="Postni o'chirish" onClick={() => setConfirmTarget({
+                title: "Postni o'chirish",
+                message: "Postni o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.",
+                onConfirm: () => deleteOwnedItem(reel, "reel"),
+              })} className="absolute right-2 top-2 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow">O'chirish</button>}
+            </div>
           )) : (selected === 1 ? audiobooks : likedBooks).map((item) => {
             const book = item.book || item;
             return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => book.id && nav(`/books/${book.id}`)}
-                className="aspect-[3/4] rounded-xl bg-slate-100 relative overflow-hidden flex flex-col items-center justify-center text-center p-4"
-              >
-                <I n={selected === 1 ? "play" : "heart"} s={26} />
-                <span className="mt-3 text-sm font-semibold text-slate-700">{book.title || book.t}</span>
-              </button>
+              <div key={item.id} className="relative">
+                <button
+                  type="button"
+                  onClick={() => book.id && nav(`/books/${book.id}`)}
+                  className="aspect-[3/4] w-full rounded-xl bg-slate-100 relative overflow-hidden flex flex-col items-center justify-center text-center p-4"
+                >
+                  <I n={selected === 1 ? "play" : "heart"} s={26} />
+                  <span className="mt-3 text-sm font-semibold text-slate-700">{book.title || book.t}</span>
+                </button>
+                {selected === 1 && isOwnProfile && String(item.created_by) === String(currentUserId) && <button type="button" aria-label="Audiokitobni o'chirish" onClick={() => setConfirmTarget({
+                  title: "Audiokitobni o'chirish",
+                  message: "Audiokitobni o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.",
+                  onConfirm: () => deleteOwnedItem(item, "audiobook"),
+                })} className="absolute right-2 top-2 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow">O'chirish</button>}
+              </div>
             );
           })}
         </div>
       )}
       {error && <p role="alert" className="text-sm text-rose-600 mt-4">{error}</p>}
+      <ConfirmDialog open={Boolean(confirmTarget)} title={confirmTarget?.title} message={confirmTarget?.message} loading={confirmBusy} onConfirm={confirmTarget?.onConfirm} onCancel={() => setConfirmTarget(null)} />
     </div>
   );
 }

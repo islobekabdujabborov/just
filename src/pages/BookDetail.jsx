@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from "react";
 import {api,getAccessToken,itemsFrom} from "../api";
-import {Btn,Cover,I,Row} from "../components/ui";
+import {Btn,ConfirmDialog,Cover,I,Row} from "../components/ui";
 import {downloadChapterAudio,getDownloadedAudio,offlineAudioUrl,removeDownloadedAudio} from "../offlineAudio";
 
 const PLAYBACK_SPEEDS=[0.75,1,1.25,1.5,2];
@@ -50,6 +50,8 @@ export default function BookDetail({id,nav}){
  const [reviewSaving,setReviewSaving]=useState(false);
  const [reviewError,setReviewError]=useState("");
  const [reviewNotice,setReviewNotice]=useState("");
+ const [confirmTarget,setConfirmTarget]=useState(null);
+ const [confirmBusy,setConfirmBusy]=useState(false);
  const [playbackSpeed,setPlaybackSpeed]=useState(getSavedPlaybackSpeed);
  const [sleepTimer,setSleepTimer]=useState("off");
  const audioRef=useRef(null);
@@ -276,7 +278,7 @@ export default function BookDetail({id,nav}){
  const deleteReview=async()=>{
   const ownReview=reviews.find(item=>item.is_mine);
   if(!ownReview)return;
-  setReviewSaving(true);
+  setConfirmBusy(true);
   setReviewError("");
   setReviewNotice("");
   try{
@@ -287,8 +289,21 @@ export default function BookDetail({id,nav}){
    setReviewRating(5);
    setReviewText("");
    setReviewNotice("Sharhingiz o'chirildi.");
-  }catch(reason){setReviewError(reason.message||"Sharhni o'chirib bo'lmadi.");}
-  finally{setReviewSaving(false);}
+   setConfirmTarget(null);
+  }catch{setReviewError("Sharhni o'chirib bo'lmadi. Qayta urinib ko'ring.");setConfirmTarget(null);}
+  finally{setConfirmBusy(false);}
+ };
+ const deleteBookmark=async bookmark=>{
+  setConfirmBusy(true);
+  setBookmarkError("");
+  setBookmarkNotice("");
+  try{
+   await api.delete(`/bookmarks/${bookmark.id}/`);
+   setBookmarks(current=>current.filter(item=>item.id!==bookmark.id));
+   setBookmarkNotice("Xatcho'p o'chirildi.");
+   setConfirmTarget(null);
+  }catch{setBookmarkError("Xatcho'pni o'chirib bo'lmadi. Qayta urinib ko'ring.");setConfirmTarget(null);}
+  finally{setConfirmBusy(false);}
  };
  const setChapter=index=>{
   if(chapters[index]?.locked){setPremiumPrompt(true);return;}
@@ -354,7 +369,7 @@ export default function BookDetail({id,nav}){
     <textarea id="review-text" value={reviewText} onChange={event=>setReviewText(event.target.value)} maxLength={2000} rows={3} placeholder="Kitob haqidagi fikringiz" className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm"/>
     <div className="mt-3 flex flex-wrap gap-2">
      <Btn type="submit" disabled={reviewSaving||reviewLoading} cn="px-4 py-2">{reviewSaving?"Saqlanmoqda...":reviews.some(item=>item.is_mine)?"Sharhni yangilash":"Sharh yuborish"}</Btn>
-     {reviews.some(item=>item.is_mine)&&<Btn type="button" v="g" disabled={reviewSaving} onClick={deleteReview} cn="px-4 py-2">Sharhni o'chirish</Btn>}
+     {reviews.some(item=>item.is_mine)&&<Btn type="button" v="g" disabled={reviewSaving} onClick={()=>setConfirmTarget({title:"Sharhni o'chirish",message:"Sharhingizni o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.",onConfirm:deleteReview})} cn="px-4 py-2">Sharhni o'chirish</Btn>}
     </div>
    </form>:<p className="mb-4 text-sm text-slate-600">Baho berish va sharh yozish uchun <button type="button" onClick={()=>nav("/login")} className="font-bold underline">tizimga kiring</button>.</p>}
    {reviewError&&<p role="alert" className="text-sm text-rose-700 mb-3">{reviewError}</p>}
@@ -416,10 +431,13 @@ export default function BookDetail({id,nav}){
     const chapter=chapters.find(part=>String(part.id)===String(bookmark.chapter));
     const minutes=Math.floor(bookmark.position/60);
     const seconds=String(bookmark.position%60).padStart(2,"0");
-    return <button key={bookmark.id} type="button" onClick={()=>seekToBookmark(bookmark)} className="w-full px-2 py-3 text-left hover:bg-neutral-100 rounded-lg">
-     <span className="flex items-center justify-between gap-3 text-sm font-semibold"><span>{chapter?.title||"Audiokitob"}</span><span className="shrink-0 text-slate-600">{minutes}:{seconds}</span></span>
-     {bookmark.note&&<span className="mt-1 block whitespace-pre-wrap text-sm text-slate-600">{bookmark.note}</span>}
-    </button>;
+    return <div key={bookmark.id} className="flex items-center gap-2 px-2 py-2">
+     <button type="button" onClick={()=>seekToBookmark(bookmark)} className="min-w-0 flex-1 rounded-lg py-1 text-left hover:bg-neutral-100">
+      <span className="flex items-center justify-between gap-3 text-sm font-semibold"><span>{chapter?.title||"Audiokitob"}</span><span className="shrink-0 text-slate-600">{minutes}:{seconds}</span></span>
+      {bookmark.note&&<span className="mt-1 block whitespace-pre-wrap text-sm text-slate-600">{bookmark.note}</span>}
+     </button>
+     {getAccessToken()&&<button type="button" aria-label="Xatcho'pni o'chirish" onClick={()=>setConfirmTarget({title:"Xatcho'pni o'chirish",message:"Xatcho'pni o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.",onConfirm:()=>deleteBookmark(bookmark)})} className="shrink-0 rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">O'chirish</button>}
+    </div>;
    })}</div>:<p className="text-sm text-slate-600">Hozircha xatcho'p qo'shilmagan.</p>}
   </section>
   <h2 className="font-extrabold mb-3">Boblar</h2>
@@ -439,5 +457,6 @@ export default function BookDetail({id,nav}){
     <Btn type="button" disabled cn="mt-5 w-full py-3">Obuna bo'lish — tez orada</Btn>
    </section>
   </div>}
+  <ConfirmDialog open={Boolean(confirmTarget)} title={confirmTarget?.title} message={confirmTarget?.message} loading={confirmBusy} onConfirm={confirmTarget?.onConfirm} onCancel={()=>setConfirmTarget(null)}/>
  </div>;
 }

@@ -101,6 +101,12 @@ class BookmarkApiTests(APITestCase):
         self.assertEqual(delete_response.status_code, 204)
         self.assertFalse(Bookmark.objects.filter(id=bookmark.id).exists())
 
+    def test_audiobook_api_identifies_its_creator(self):
+        response = self.client.get(f"/api/audiobooks/{self.audiobook.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["created_by"], self.user.id)
+
     def test_non_owner_cannot_update_or_delete_bookmark(self):
         bookmark = Bookmark.objects.create(user=self.other_user, audiobook=self.audiobook, position=12)
 

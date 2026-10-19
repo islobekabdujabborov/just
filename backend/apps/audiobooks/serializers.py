@@ -32,10 +32,11 @@ class AudiobookSerializer(serializers.ModelSerializer):
     book = BookSerializer(read_only=True)
     book_id = serializers.PrimaryKeyRelatedField(source="book", queryset=__import__("apps.books.models", fromlist=["Book"]).Book.objects.all(), write_only=True, required=False)
     audio_file = serializers.FileField(required=False, validators=[validate_audio, FileExtensionValidator(["mp3", "m4a", "wav", "ogg"])])
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
     audio_url = serializers.SerializerMethodField()
     has_audio = serializers.SerializerMethodField()
     chapters = ChapterSerializer(many=True, read_only=True)
-    class Meta: model = Audiobook; fields = ["id", "book", "book_id", "audio_file", "audio_url", "duration", "access", "has_audio", "chapters"]
+    class Meta: model = Audiobook; fields = ["id", "book", "book_id", "created_by", "audio_file", "audio_url", "duration", "access", "has_audio", "chapters"]
     def get_audio_url(self, obj):
         if not obj.audio_file or obj.access == Audiobook.ACCESS_PREMIUM:
             return None
