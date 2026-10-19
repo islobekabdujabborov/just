@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.core.validators import FileExtensionValidator
-from .models import Author, Book, Genre, validate_cover
+from .models import Author, Book, Genre, Review, validate_cover
 
 class AuthorSerializer(serializers.ModelSerializer):
     class Meta: model = Author; fields = ["id", "name", "bio"]
@@ -48,3 +48,29 @@ class BookSerializer(serializers.ModelSerializer):
         if author_name:
             instance.author, _ = Author.objects.get_or_create(name=author_name)
         return super().update(instance, validated_data)
+
+class ReviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.username", read_only=True)
+    is_mine = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Review
+        fields = ["id", "user_name", "is_mine", "rating", "text", "created_at", "updated_at"]
+        read_only_fields = ["id", "user_name", "is_mine", "created_at", "updated_at"]
+
+    def get_is_mine(self, obj):
+        request = self.context.get("request")
+        return bool(request and request.user.is_authenticated and obj.user_id == request.user.id)
+
+    def validate_rating(self, value):
+        if not 1 <= value <= 5:
+            raise serializers.ValidationError("Baho 1 dan 5 gacha bo'lishi kerak.")
+        return value
+
+    def validate(self, attrs):
+        if not self.instance:
+            request = self.context.get("request")
+            book = self.context.get("book")
+            if request and request.user.is_authenticated and book and Review.objects.filter(user=request.user, book=book).exists():
+                raise serializers.ValidationError({"detail": "Bu kitobga allaqachon baho bergansiz."})
+        return attrs

@@ -8,9 +8,14 @@ def validate_audio(file):
         raise ValidationError("Audio files must be 100 MB or smaller.")
 
 class Audiobook(models.Model):
+    ACCESS_FREE = "free"
+    ACCESS_PREMIUM = "premium"
+    ACCESS_CHOICES = [(ACCESS_FREE, "Free"), (ACCESS_PREMIUM, "Premium")]
+
     book = models.ForeignKey("books.Book", on_delete=models.CASCADE, related_name="audiobooks")
     audio_file = models.FileField(upload_to="audiobooks/", blank=True, validators=[validate_audio, FileExtensionValidator(["mp3", "m4a", "wav", "ogg"])])
     duration = models.PositiveIntegerField(default=0)
+    access = models.CharField(max_length=12, choices=ACCESS_CHOICES, default=ACCESS_FREE)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -20,6 +25,18 @@ class Chapter(models.Model):
     audio_file = models.FileField(upload_to="chapters/", blank=True, validators=[validate_audio, FileExtensionValidator(["mp3", "m4a", "wav", "ogg"])])
     duration = models.PositiveIntegerField(default=0)
     order = models.PositiveIntegerField(default=1)
+    is_free_preview = models.BooleanField(default=False)
     class Meta:
         ordering = ["order"]
         constraints = [models.UniqueConstraint(fields=["audiobook", "order"], name="unique_audiobook_chapter_order")]
+
+class Bookmark(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bookmarks")
+    audiobook = models.ForeignKey(Audiobook, on_delete=models.CASCADE, related_name="bookmarks")
+    chapter = models.ForeignKey(Chapter, null=True, blank=True, on_delete=models.SET_NULL, related_name="bookmarks")
+    position = models.PositiveIntegerField()
+    note = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

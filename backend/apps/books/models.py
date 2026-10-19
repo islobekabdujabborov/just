@@ -34,3 +34,18 @@ class Book(models.Model):
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["genre", "-created_at"]), models.Index(fields=["-rating"])]
     def __str__(self): return self.title
+
+class Review(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="book_reviews")
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="reviews")
+    rating = models.PositiveSmallIntegerField()
+    text = models.TextField(max_length=2000, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "book"], name="unique_user_book_review"),
+            models.CheckConstraint(condition=models.Q(rating__gte=1, rating__lte=5), name="review_rating_1_to_5"),
+        ]

@@ -1,12 +1,13 @@
 from django.shortcuts import get_object_or_404
 import math
-from rest_framework import generics, permissions, viewsets
+from rest_framework import generics, permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from config.permissions import IsOwnerOrReadOnly
-from .models import Audiobook, Chapter
-from .serializers import AudiobookSerializer, ChapterSerializer
+from .models import Audiobook, Bookmark, Chapter
+from .serializers import AudiobookSerializer, BookmarkSerializer, ChapterSerializer
+from .access import can_access_audiobook, can_access_chapter, signed_audio_url
 from apps.library.models import ListeningProgress
 
 class AudiobookViewSet(viewsets.ModelViewSet):
@@ -36,6 +37,33 @@ class ChapterListView(generics.ListCreateAPIView):
             raise PermissionDenied("You can only add chapters to audiobooks you uploaded.")
         serializer.save(audiobook=audiobook)
 
+class ChapterDetailView(generics.RetrieveAPIView):
+    serializer_class = ChapterSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Chapter.objects.select_related("audiobook", "audiobook__book")
+
+class ChapterStreamView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        chapter = get_object_or_404(Chapter.objects.select_related("audiobook"), pk=pk)
+        if not chapter.audio_file:
+            return Response({"detail": "Bob uchun audio mavjud emas."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_access_chapter(request.user, chapter):
+            return Response({"detail": "Bu bob uchun Premium obuna kerak."}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"url": signed_audio_url(request, "chapter", chapter)})
+
+class AudiobookStreamView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        audiobook = get_object_or_404(Audiobook, pk=pk)
+        if not audiobook.audio_file:
+            return Response({"detail": "Audiokitob uchun audio mavjud emas."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_access_audiobook(request.user, audiobook):
+            return Response({"detail": "Bu audiokitob uchun Premium obuna kerak."}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"url": signed_audio_url(request, "audiobook", audiobook)})
+
 class ProgressView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request, pk):
@@ -56,3 +84,43 @@ class ProgressView(APIView):
         progress, _ = ListeningProgress.objects.update_or_create(user=request.user, audiobook=audiobook, defaults={
             "chapter": chapter, "position": position, "percentage": percentage})
         return Response({"position": progress.position, "percentage": progress.percentage, "chapter": progress.chapter_id})
+
+class AudiobookBookmarkListView(generics.ListCreateAPIView):
+    serializer_class = BookmarkSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_audiobook(self):
+        if not hasattr(self, "_audiobook"):
+            self._audiobook = get_object_or_404(Audiobook, pk=self.kwargs["pk"])
+        return self._audiobook
+
+    def get_queryset(self):
+        return Bookmark.objects.filter(user=self.request.user, audiobook=self.get_audiobook()).select_related("chapter")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["audiobook"] = self.get_audiobook()
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user, audiobook=self.get_audiobook())
+
+class BookmarkDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+
+    def get_object(self, pk):
+        bookmark = get_object_or_404(Bookmark.objects.select_related("audiobook", "chapter"), pk=pk)
+        self.check_object_permissions(self.request, bookmark)
+        return bookmark
+
+    def patch(self, request, pk):
+        bookmark = self.get_object(pk)
+        serializer = BookmarkSerializer(bookmark, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        bookmark = self.get_object(pk)
+        bookmark.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

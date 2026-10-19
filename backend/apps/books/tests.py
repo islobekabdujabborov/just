@@ -9,7 +9,10 @@ from apps.users.models import User
 from apps.books.models import Author, Book, Genre
 from apps.reels.models import Reel
 from apps.audiobooks.models import Audiobook
-from apps.interactions.models import Like
+from apps.interactions.models import Like, Save
+from apps.notifications.models import Notification
+from apps.library.models import ListeningProgress
+from .models import Review
 
 class AvoBookApiTests(APITestCase):
     def setUp(self):
@@ -107,3 +110,227 @@ class AvoBookApiTests(APITestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.data["likes_count"], 1)
         self.assertEqual(Like.objects.filter(user=self.user, reel=reel).count(), 1)
+
+
+class BookReviewApiTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username="book-owner",
+            email="owner@example.uz",
+            password="strong-pass-123",
+        )
+        self.reviewer = User.objects.create_user(
+            username="reviewer",
+            email="reviewer@example.uz",
+            password="strong-pass-123",
+        )
+        self.other_reviewer = User.objects.create_user(
+            username="other-reviewer",
+            email="other@example.uz",
+            password="strong-pass-123",
+        )
+        self.author = Author.objects.create(name="Review Author")
+        self.genre, _ = Genre.objects.get_or_create(name="Review Genre", defaults={"slug": "review-genre"})
+        self.book = Book.objects.create(
+            title="Review Book",
+            author=self.author,
+            genre=self.genre,
+            owner=self.owner,
+            rating=0,
+        )
+        self.url = f"/api/books/{self.book.id}/reviews/"
+        self.client.force_authenticate(self.reviewer)
+
+    def test_reviews_are_public_and_include_review_author(self):
+        review = Review.objects.create(user=self.reviewer, book=self.book, rating=4, text="Yaxshi kitob.")
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"][0]["id"], review.id)
+        self.assertEqual(response.data["results"][0]["user_name"], self.reviewer.username)
+        self.assertFalse(response.data["results"][0]["is_mine"])
+
+    def test_authenticated_user_can_create_review_and_notify_book_owner(self):
+        response = self.client.post(self.url, {"rating": 5, "text": "Juda yaxshi."}, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        review = Review.objects.get(id=response.data["id"])
+        self.assertEqual(review.user, self.reviewer)
+        self.assertEqual(review.book, self.book)
+        self.book.refresh_from_db()
+        self.assertEqual(str(self.book.rating), "5.0")
+        notification = Notification.objects.get(recipient=self.owner, type="review")
+        self.assertEqual(notification.actor, self.reviewer)
+
+    def test_review_creation_respects_notification_preferences(self):
+        self.owner.notification_preferences = {"likeComments": False}
+        self.owner.save(update_fields=["notification_preferences"])
+
+        response = self.client.post(self.url, {"rating": 3, "text": ""}, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(Notification.objects.filter(recipient=self.owner, type="review").exists())
+
+    def test_review_owner_can_update_and_delete_and_rating_stays_synchronized(self):
+        review = Review.objects.create(user=self.reviewer, book=self.book, rating=3, text="O'rtacha.")
+        other_review = Review.objects.create(user=self.other_reviewer, book=self.book, rating=5)
+        self.book.rating = 4
+        self.book.save(update_fields=["rating"])
+
+        update_response = self.client.patch(
+            f"/api/reviews/{review.id}/",
+            {"rating": 4, "text": "Yaxshi."},
+            format="json",
+        )
+        self.book.refresh_from_db()
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(str(self.book.rating), "4.5")
+
+        self.client.force_authenticate(self.other_reviewer)
+        delete_response = self.client.delete(f"/api/reviews/{other_review.id}/")
+        self.book.refresh_from_db()
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertEqual(str(self.book.rating), "4.0")
+
+        self.client.force_authenticate(self.reviewer)
+        final_delete_response = self.client.delete(f"/api/reviews/{review.id}/")
+        self.book.refresh_from_db()
+        self.assertEqual(final_delete_response.status_code, 204)
+        self.assertEqual(str(self.book.rating), "0.0")
+
+    def test_non_owner_cannot_update_or_delete_review(self):
+        review = Review.objects.create(user=self.other_reviewer, book=self.book, rating=4)
+
+        update_response = self.client.patch(f"/api/reviews/{review.id}/", {"rating": 1}, format="json")
+        delete_response = self.client.delete(f"/api/reviews/{review.id}/")
+
+        self.assertEqual(update_response.status_code, 403)
+        self.assertEqual(delete_response.status_code, 403)
+        self.assertTrue(Review.objects.filter(id=review.id).exists())
+
+    def test_user_can_only_review_a_book_once(self):
+        Review.objects.create(user=self.reviewer, book=self.book, rating=4)
+
+        response = self.client.post(self.url, {"rating": 5, "text": "Ikkinchi sharh."}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Review.objects.filter(user=self.reviewer, book=self.book).count(), 1)
+
+    def test_invalid_rating_and_long_review_are_rejected(self):
+        for payload in (
+            {"rating": 0},
+            {"rating": 6},
+            {"rating": 5, "text": "x" * 2001},
+        ):
+            with self.subTest(payload=payload):
+                response = self.client.post(self.url, payload, format="json")
+                self.assertEqual(response.status_code, 400)
+
+    def test_anonymous_user_cannot_create_review(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post(self.url, {"rating": 5}, format="json")
+
+        self.assertEqual(response.status_code, 401)
+
+
+class RecommendationsApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="recommendation-reader",
+            email="recommendation-reader@example.com",
+            password="strong-pass-123",
+        )
+        self.author = Author.objects.create(name="Recommendation Author")
+        self.liked_genre = Genre.objects.create(name="Liked Genre", slug="liked-genre")
+        self.saved_genre = Genre.objects.create(name="Saved Genre", slug="saved-genre")
+        self.listened_genre = Genre.objects.create(name="Listened Genre", slug="listened-genre")
+        self.other_genre = Genre.objects.create(name="Other Genre", slug="other-genre")
+        self.liked_book = Book.objects.create(
+            title="Liked history",
+            author=self.author,
+            genre=self.liked_genre,
+            rating=2,
+        )
+        self.saved_book = Book.objects.create(
+            title="Saved history",
+            author=self.author,
+            genre=self.saved_genre,
+            rating=2,
+        )
+        self.listened_book = Book.objects.create(
+            title="Listened history",
+            author=self.author,
+            genre=self.listened_genre,
+            rating=2,
+        )
+        self.liked_recommendation = Book.objects.create(
+            title="Liked genre recommendation",
+            author=self.author,
+            genre=self.liked_genre,
+            rating=3,
+        )
+        self.saved_recommendation = Book.objects.create(
+            title="Saved genre recommendation",
+            author=self.author,
+            genre=self.saved_genre,
+            rating=5,
+        )
+        self.listened_recommendation = Book.objects.create(
+            title="Listened genre recommendation",
+            author=self.author,
+            genre=self.listened_genre,
+            rating=5,
+        )
+        self.other_recommendation = Book.objects.create(
+            title="Other genre recommendation",
+            author=self.author,
+            genre=self.other_genre,
+            rating=5,
+        )
+
+    def test_authenticated_recommendations_rank_preferred_genres_and_exclude_history(self):
+        Like.objects.create(user=self.user, book=self.liked_book)
+        Save.objects.create(user=self.user, book=self.saved_book)
+        audiobook = Audiobook.objects.create(book=self.listened_book)
+        ListeningProgress.objects.create(user=self.user, audiobook=audiobook, position=20)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/recommendations/")
+
+        self.assertEqual(response.status_code, 200)
+        recommended_ids = [item["id"] for item in response.data["results"]]
+        self.assertLess(
+            recommended_ids.index(self.liked_recommendation.id),
+            recommended_ids.index(self.saved_recommendation.id),
+        )
+        self.assertLess(
+            recommended_ids.index(self.saved_recommendation.id),
+            recommended_ids.index(self.listened_recommendation.id),
+        )
+        self.assertNotIn(self.listened_book.id, recommended_ids)
+
+    def test_new_user_and_anonymous_user_get_top_rated_books(self):
+        self.user.refresh_from_db()
+        self.client.force_authenticate(self.user)
+        new_user_response = self.client.get("/api/recommendations/")
+        self.client.force_authenticate(user=None)
+        anonymous_response = self.client.get("/api/recommendations/")
+
+        for response in (new_user_response, anonymous_response):
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.data["results"][0]["id"],
+                self.other_recommendation.id,
+            )
+
+    def test_recommendations_are_paginated(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get("/api/recommendations/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("results", response.data)
+        self.assertIn("next", response.data)

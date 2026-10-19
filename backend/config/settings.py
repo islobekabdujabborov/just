@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
     "corsheaders", "rest_framework", "rest_framework_simplejwt", "django_filters",
     "drf_spectacular", "apps.users", "apps.books", "apps.audiobooks", "apps.reels",
-    "apps.interactions", "apps.comments", "apps.library", "apps.notifications",
+    "apps.interactions", "apps.comments", "apps.library", "apps.notifications", "apps.telegram_bot",
 ]
 
 MIDDLEWARE = [
@@ -144,4 +144,11 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {"TITLE": "AvoBook API", "VERSION": "1.0.0", "SERVE_INCLUDE_SCHEMA": False}
 SIMPLE_JWT = {"ROTATE_REFRESH_TOKENS": True, "BLACKLIST_AFTER_ROTATION": False}
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+TELEGRAM_VERIFICATION_CODE_TTL = int(os.getenv("TELEGRAM_VERIFICATION_CODE_TTL", "300"))
+TELEGRAM_VERIFICATION_MAX_ATTEMPTS = int(os.getenv("TELEGRAM_VERIFICATION_MAX_ATTEMPTS", "5"))
+TELEGRAM_VERIFICATION_RESEND_COOLDOWN = int(os.getenv("TELEGRAM_VERIFICATION_RESEND_COOLDOWN", "60"))
+TELEGRAM_VERIFICATION_MAX_RESENDS = int(os.getenv("TELEGRAM_VERIFICATION_MAX_RESENDS", "3"))
+TELEGRAM_VERIFICATION_SESSION_TTL = int(os.getenv("TELEGRAM_VERIFICATION_SESSION_TTL", "900"))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

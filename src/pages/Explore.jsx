@@ -12,6 +12,8 @@ const genrePalette=[
 
 export default function Explore({nav}){
  const [sections,setSections]=useState({trending:[],popular:[],new:[],reels:[],genres:[]});
+ const [recommendations,setRecommendations]=useState([]);
+ const [recommendationError,setRecommendationError]=useState("");
  const [query,setQuery]=useState("");
  const [results,setResults]=useState(null);
  const [error,setError]=useState("");
@@ -22,6 +24,15 @@ export default function Explore({nav}){
  useEffect(()=>{
   let active=true;
   api.get("/explore/").then(data=>{if(active)setSections(data);}).catch(reason=>{if(active)setError(reason.message);}).finally(()=>{if(active)setLoading(false);});
+  return()=>{active=false;};
+ },[]);
+ useEffect(()=>{
+  let active=true;
+  api.get("/recommendations/").then(payload=>{
+   if(active)setRecommendations(itemsFrom(payload));
+  }).catch(reason=>{
+   if(active)setRecommendationError(reason.message||"Tavsiyalarni yuklab bo'lmadi.");
+  });
   return()=>{active=false;};
  },[]);
 
@@ -64,6 +75,8 @@ export default function Explore({nav}){
      return <button type="button" key={genre.id||genre.name} className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-full text-sm font-semibold ${palette.bg} text-white shadow-sm`} onClick={()=>setQuery(genre.name)}><span className="grid h-6 w-6 place-items-center rounded-full bg-white/15"><I n={palette.icon} s={14}/></span>{genre.name}</button>;
     })}
    </div>
+   {recommendations.length>0&&<Row title="Siz uchun" items={recommendations} nav={nav}/>}
+   {recommendationError&&<p role="alert" className="text-sm text-rose-700 mb-4">{recommendationError}</p>}
    {loading?<p role="status" className="text-sm text-slate-600">Kitoblar yuklanmoqda...</p>:<>
     {sections.trending?.length>0&&<Row title="Trendda" items={itemsFrom(sections.trending)} nav={nav}/>}
     {sections.popular?.length>0&&<Row title="Mashhur kitoblar" items={itemsFrom(sections.popular)} nav={nav}/>}

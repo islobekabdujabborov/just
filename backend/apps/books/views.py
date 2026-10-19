@@ -1,12 +1,18 @@
-from django.db.models import Count, Q
+from decimal import Decimal, ROUND_HALF_UP
+from django.db import transaction
+from django.db.models import Avg, Case, Count, IntegerField, Q, Value, When
 from django.shortcuts import get_object_or_404
-from rest_framework import filters, permissions, status, viewsets
+from rest_framework import filters, generics, permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from config.permissions import IsOwnerOrReadOnly
-from .models import Author, Book, Genre
-from .serializers import AuthorSerializer, BookSerializer, GenreSerializer
+from apps.notifications.models import Notification
+from apps.interactions.models import Like, Save
+from apps.library.models import ListeningProgress
+from .models import Author, Book, Genre, Review
+from .serializers import AuthorSerializer, BookSerializer, GenreSerializer, ReviewSerializer
 
 class BookViewSet(viewsets.ModelViewSet):
     serializer_class = BookSerializer
@@ -28,6 +34,109 @@ class BookViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only delete books you uploaded.")
         instance.delete()
+
+def update_book_rating(book_id):
+    average = Review.objects.filter(book_id=book_id).aggregate(value=Avg("rating"))["value"]
+    rating = Decimal(average or 0).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    Book.objects.filter(pk=book_id).update(rating=rating)
+
+class BookReviewListView(generics.ListCreateAPIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_book(self):
+        if not hasattr(self, "_book"):
+            self._book = get_object_or_404(Book, pk=self.kwargs["pk"])
+        return self._book
+
+    def get_queryset(self):
+        return Review.objects.filter(book=self.get_book()).select_related("user")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["book"] = self.get_book()
+        return context
+
+    def perform_create(self, serializer):
+        book = self.get_book()
+        with transaction.atomic():
+            review = serializer.save(user=self.request.user, book=book)
+            update_book_rating(book.id)
+            owner = book.owner
+            if owner and owner.id != self.request.user.id and Notification.should_send(owner, "review"):
+                Notification.objects.create(
+                    recipient=owner,
+                    actor=self.request.user,
+                    type="review",
+                    text=f"@{self.request.user.username} kitobingizga yangi baho berdi.",
+                )
+
+class ReviewDetailView(generics.GenericAPIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    http_method_names = ["patch", "delete", "options"]
+
+    def get_queryset(self):
+        return Review.objects.select_related("user", "book")
+
+    def patch(self, request, *args, **kwargs):
+        review = self.get_object()
+        serializer = self.get_serializer(review, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            review = serializer.save()
+            update_book_rating(review.book_id)
+        return Response(serializer.data)
+
+    def delete(self, request, *args, **kwargs):
+        review = self.get_object()
+        book_id = review.book_id
+        with transaction.atomic():
+            review.delete()
+            update_book_rating(book_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class RecommendationsView(generics.ListAPIView):
+    serializer_class = BookSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        user = self.request.user
+        listened_book_ids = set()
+        genre_scores = {}
+
+        if user.is_authenticated:
+            listened_book_ids = set(
+                ListeningProgress.objects.filter(user=user).values_list("audiobook__book_id", flat=True)
+            )
+            genre_sources = (
+                (Like.objects.filter(user=user, book__isnull=False).values_list("book__genre_id", flat=True), 3),
+                (Save.objects.filter(user=user, book__isnull=False).values_list("book__genre_id", flat=True), 2),
+                (ListeningProgress.objects.filter(user=user).values_list("audiobook__book__genre_id", flat=True), 1),
+            )
+            for genre_ids, weight in genre_sources:
+                for genre_id in genre_ids:
+                    genre_scores[genre_id] = genre_scores.get(genre_id, 0) + weight
+
+        books = Book.objects.select_related("author", "genre").annotate(
+            likes_count=Count("likes", distinct=True)
+        )
+        if listened_book_ids:
+            books = books.exclude(id__in=listened_book_ids)
+        if not genre_scores:
+            return books.order_by("-rating", "-likes_count", "-created_at")
+
+        genre_score = Case(
+            *[
+                When(genre_id=genre_id, then=Value(score))
+                for genre_id, score in genre_scores.items()
+            ],
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        return books.annotate(recommendation_score=genre_score).order_by(
+            "-recommendation_score", "-rating", "-likes_count", "-created_at"
+        )
 
 @api_view(["GET"])
 @permission_classes([permissions.AllowAny])

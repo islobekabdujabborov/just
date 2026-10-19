@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from "react";
 import {Btn,I} from "../components/ui";
-import {api,itemsFrom} from "../api";
+import {api,getAccessToken,itemsFrom} from "../api";
 
 const GRADIENTS=["from-violet-600 to-fuchsia-700","from-indigo-600 to-violet-800","from-emerald-600 to-teal-800","from-rose-600 to-purple-800","from-amber-500 to-rose-700","from-sky-600 to-indigo-800"];
 
@@ -16,16 +16,27 @@ export default function Reels({nav}){
  const [playing,setPlaying]=useState({});
  const [muted,setMuted]=useState(true);
  const [videoErrors,setVideoErrors]=useState({});
+ const [activeFeed,setActiveFeed]=useState("all");
  const feedRef=useRef(null);
 
  useEffect(()=>{
-  api.get("/reels/").then(payload=>{
+  let active=true;
+  setLoading(true);
+  setError("");
+  setReels([]);
+  if(activeFeed==="following"&&!getAccessToken()){
+   setLoading(false);
+   return()=>{active=false;};
+  }
+  api.get(activeFeed==="following"?"/reels/feed/":"/reels/").then(payload=>{
+   if(!active)return;
    const list=itemsFrom(payload);
    setReels(list);
    setLiked(Object.fromEntries(list.map(reel=>[reel.id,reel.is_liked])));
    setSaved(Object.fromEntries(list.map(reel=>[reel.id,reel.is_saved])));
-  }).catch(reason=>setError(reason.message)).finally(()=>setLoading(false));
- },[]);
+  }).catch(reason=>{if(active)setError(reason.message);}).finally(()=>{if(active)setLoading(false);});
+  return()=>{active=false;};
+ },[activeFeed]);
 
  useEffect(()=>{
   if(!feedRef.current||!reels.length||typeof IntersectionObserver==="undefined")return;
@@ -73,13 +84,20 @@ export default function Reels({nav}){
   }catch(reason){setError(reason.message);}
  };
  const count=value=>Number(value||0).toLocaleString();
-
- if(loading)return <div className="grid min-h-[60dvh] place-items-center" role="status">Reellar yuklanmoqda...</div>;
- if(!reels.length)return <div className="grid min-h-[70dvh] place-items-center px-5 text-center">
-    <div><h1 className="text-2xl font-extrabold mb-2">Hozircha reel yo'q</h1><p className="text-sm text-slate-600 mb-5">Birinchi reelni siz joylang.</p><Btn onClick={()=>nav("/create")}>Reel yaratish</Btn>{error&&<p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}</div>
+ const feedTabs=<div role="tablist" aria-label="Reel lentasi" className="absolute top-3 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded-full bg-black/60 p-1 text-sm text-white backdrop-blur">
+  <button type="button" role="tab" aria-selected={activeFeed==="all"} onClick={()=>setActiveFeed("all")} className={`rounded-full px-4 py-2 font-semibold ${activeFeed==="all"?"bg-white text-black":"text-white"}`}>Tavsiya</button>
+  <button type="button" role="tab" aria-selected={activeFeed==="following"} onClick={()=>setActiveFeed("following")} className={`rounded-full px-4 py-2 font-semibold ${activeFeed==="following"?"bg-white text-black":"text-white"}`}>Kuzatilayotganlar</button>
  </div>;
 
- return <div ref={feedRef} className="snap h-[100dvh] overflow-y-auto md:m-0">
+ if(loading)return <div className="relative"><div className="grid min-h-[60dvh] place-items-center" role="status">Reellar yuklanmoqda...</div>{feedTabs}</div>;
+ if(!reels.length)return <div className="relative grid min-h-[70dvh] place-items-center px-5 text-center">
+    {feedTabs}
+    <div>{activeFeed==="following"?<><h1 className="text-2xl font-extrabold mb-2">{getAccessToken()?"Kuzatilayotganlarda reel yo'q":"Kuzatilayotganlar lentasi"}</h1><p className="text-sm text-slate-600 mb-5">{getAccessToken()?"Siz kuzatgan foydalanuvchilar yangi reel joylaganda shu yerda ko'rinadi.":"Kuzatilayotganlar lentasini ko'rish uchun tizimga kiring."}</p>{!getAccessToken()&&<Btn onClick={()=>nav("/login")}>Tizimga kirish</Btn>}</>:<><h1 className="text-2xl font-extrabold mb-2">Hozircha reel yo'q</h1><p className="text-sm text-slate-600 mb-5">Birinchi reelni siz joylang.</p><Btn onClick={()=>nav("/create")}>Reel yaratish</Btn></>}{error&&<p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}</div>
+ </div>;
+
+ return <div className="relative">
+  {feedTabs}
+  <div ref={feedRef} className="snap h-[100dvh] overflow-y-auto md:m-0">
   {error&&<p role="alert" className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-rose-950 px-4 py-2 text-sm text-rose-100">{error}</p>}
   {reels.map(reel=><div key={reel.id} className="snapi h-[100dvh] md:h-[calc(100dvh-2rem)] md:mb-4 md:rounded-3xl relative overflow-hidden flex">
    <div className={`absolute inset-0 bg-gradient-to-br ${GRADIENTS[(reel.id-1)%GRADIENTS.length]} opacity-70`}/>
@@ -113,5 +131,6 @@ export default function Reels({nav}){
     <form onSubmit={submitComment} className="flex gap-2"><input value={commentText} onChange={event=>setCommentText(event.target.value)} placeholder="Izoh yozing..." className="min-w-0 flex-1 glass rounded-xl px-4 py-3 outline-none"/><button type="submit" className="rounded-xl bg-violet-600 px-4 font-bold">Yuborish</button></form>
    </div>
   </div>}
+  </div>
  </div>;
 }

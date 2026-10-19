@@ -8,14 +8,30 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseNotAllowed, JsonResponse, StreamingHttpResponse
+from django.core import signing
+from django.shortcuts import get_object_or_404
 from django.utils._os import safe_join
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-from apps.users.views import RegisterView, CurrentUserView, UserDetailView, LoginView
-from apps.books.views import BookViewSet, search_view, explore_view
-from apps.audiobooks.views import AudiobookViewSet, ChapterListView, ProgressView
-from apps.reels.views import ReelViewSet
+from apps.users.views import (
+    CancelTelegramVerificationView,
+    CurrentUserView,
+    LoginView,
+    RegisterView,
+    ResendTelegramVerificationView,
+    TelegramStatusView,
+    TelegramVerificationView,
+    UserDetailView,
+    CancelSubscriptionView,
+    CheckoutStubView,
+    PaymentWebhookStubView,
+    SubscriptionStatusView,
+)
+from apps.books.views import BookReviewListView, BookViewSet, RecommendationsView, ReviewDetailView, search_view, explore_view
+from apps.audiobooks.models import Audiobook, Chapter
+from apps.audiobooks.views import AudiobookBookmarkListView, AudiobookStreamView, AudiobookViewSet, BookmarkDetailView, ChapterDetailView, ChapterListView, ChapterStreamView, ProgressView
+from apps.reels.views import FollowingReelFeedView, ReelViewSet
 from apps.interactions.views import ReelLikeView, ReelSaveView, BookLikeView, BookSaveView
 from apps.comments.views import ReelCommentsView, CommentDeleteView
 from apps.comments.views import CommentLikeView
@@ -39,7 +55,7 @@ def service_worker(request):
     return response
 
 
-def media_serve(request, path):
+def _serve_media_file(request, path):
     if request.method not in {"GET", "HEAD"}:
         return HttpResponseNotAllowed(["GET", "HEAD"])
     try:
@@ -103,6 +119,45 @@ def media_serve(request, path):
     return response
 
 
+def media_serve(request, path):
+    if request.method not in {"GET", "HEAD"}:
+        return HttpResponseNotAllowed(["GET", "HEAD"])
+    locked_chapter = Chapter.objects.filter(
+        audio_file=path,
+        audiobook__access=Audiobook.ACCESS_PREMIUM,
+        is_free_preview=False,
+    ).exists()
+    premium_audiobook = Audiobook.objects.filter(
+        audio_file=path,
+        access=Audiobook.ACCESS_PREMIUM,
+    ).exists()
+    if locked_chapter or premium_audiobook:
+        return HttpResponse("Premium audio must be requested through its signed stream URL.", status=403)
+    return _serve_media_file(request, path)
+
+
+def protected_chapter_media(request, pk, token):
+    try:
+        payload = signing.TimestampSigner(salt="avobook.protected_audio").unsign_object(token, max_age=600)
+    except signing.BadSignature:
+        return HttpResponse("Signed audio URL is invalid or expired.", status=403)
+    chapter = get_object_or_404(Chapter, pk=pk)
+    if payload != {"type": "chapter", "id": chapter.id, "path": chapter.audio_file.name} or not chapter.audio_file:
+        raise Http404
+    return _serve_media_file(request, chapter.audio_file.name)
+
+
+def protected_audiobook_media(request, pk, token):
+    try:
+        payload = signing.TimestampSigner(salt="avobook.protected_audio").unsign_object(token, max_age=600)
+    except signing.BadSignature:
+        return HttpResponse("Signed audio URL is invalid or expired.", status=403)
+    audiobook = get_object_or_404(Audiobook, pk=pk)
+    if payload != {"type": "audiobook", "id": audiobook.id, "path": audiobook.audio_file.name} or not audiobook.audio_file:
+        raise Http404
+    return _serve_media_file(request, audiobook.audio_file.name)
+
+
 urlpatterns = [
     path("health/", health_check, name="health"),
     path("api/health/", health_check, name="api-health"),
@@ -112,15 +167,33 @@ urlpatterns = [
     path("api/auth/login/", LoginView.as_view()),
     path("api/auth/refresh/", TokenRefreshView.as_view()),
     path("api/auth/me/", CurrentUserView.as_view()),
+    path("api/subscription/", SubscriptionStatusView.as_view()),
+    path("api/subscription/cancel/", CancelSubscriptionView.as_view()),
+    path("api/payments/checkout/", CheckoutStubView.as_view()),
+    path("api/payments/<str:provider>/webhook/", PaymentWebhookStubView.as_view()),
+    path("api/auth/telegram/start/", TelegramVerificationView.as_view()),
+    path("api/auth/telegram/status/", TelegramStatusView.as_view()),
+    path("api/auth/telegram/verify/", TelegramVerificationView.as_view()),
+    path("api/auth/telegram/resend/", ResendTelegramVerificationView.as_view()),
+    path("api/auth/telegram/cancel/", CancelTelegramVerificationView.as_view()),
     path("api/users/<str:username>/", UserDetailView.as_view()),
     path("api/users/<str:username>/follow/", UserDetailView.as_view()),
     path("api/search/", search_view), path("api/explore/", explore_view),
     path("api/audiobooks/<int:pk>/chapters/", ChapterListView.as_view()),
+    path("api/audiobooks/<int:pk>/stream/", AudiobookStreamView.as_view()),
+    path("api/chapters/<int:pk>/", ChapterDetailView.as_view()),
+    path("api/chapters/<int:pk>/stream/", ChapterStreamView.as_view()),
     path("api/audiobooks/<int:pk>/progress/", ProgressView.as_view()),
+    path("api/audiobooks/<int:pk>/bookmarks/", AudiobookBookmarkListView.as_view()),
+    path("api/bookmarks/<int:pk>/", BookmarkDetailView.as_view()),
+    path("api/reels/feed/", FollowingReelFeedView.as_view()),
     path("api/reels/<int:pk>/like/", ReelLikeView.as_view()),
     path("api/reels/<int:pk>/save/", ReelSaveView.as_view()),
     path("api/books/<int:pk>/like/", BookLikeView.as_view()),
     path("api/books/<int:pk>/save/", BookSaveView.as_view()),
+    path("api/books/<int:pk>/reviews/", BookReviewListView.as_view()),
+    path("api/reviews/<int:pk>/", ReviewDetailView.as_view()),
+    path("api/recommendations/", RecommendationsView.as_view()),
     path("api/reels/<int:pk>/comments/", ReelCommentsView.as_view()),
     path("api/comments/<int:pk>/", CommentDeleteView.as_view()),
     path("api/comments/<int:pk>/like/", CommentLikeView.as_view()),
@@ -133,6 +206,8 @@ urlpatterns = [
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
 ]
 urlpatterns += [
+    re_path(r"^media-protected/chapters/(?P<pk>\d+)/(?P<token>[^/]+)/$", protected_chapter_media, name="protected-chapter-audio"),
+    re_path(r"^media-protected/audiobooks/(?P<pk>\d+)/(?P<token>[^/]+)/$", protected_audiobook_media, name="protected-audiobook-audio"),
     re_path(r"^media/(?P<path>.*)$", media_serve),
 ]
 
