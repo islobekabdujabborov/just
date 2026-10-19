@@ -93,7 +93,7 @@ def create_telegram_verification(request, username: str, email: str, password: s
         expires_at=expires_at,
     )
 
-    request.session["pending_registration"] = {"username": username, "email": email, "password": password}
+    request.session["pending_registration"] = {"username": username, "email": email}
     request.session["telegram_verification_token"] = verification_token
     request.session.modified = True
 
@@ -234,23 +234,14 @@ def verify_registration_code(request, token: str | None, code: str | None):
     if error_message:
         verification_error(error_message)
 
-    pending = get_pending_registration(request)
-    if not pending:
-        verification_error("Tasdiqlash uchun ro'yxatdan o'tish ma'lumotlari topilmadi.")
-    if pending.get("username") != verification.username or pending.get("email") != verification.email:
-        verification_error("Ro'yxatdan o'tish ma'lumotlari mos kelmadi.")
-
     if User.objects.filter(username__iexact=verification.username).exists() or User.objects.filter(email__iexact=verification.email).exists():
         request.session.pop("pending_registration", None)
         request.session.pop("telegram_verification_token", None)
         request.session.modified = True
         verification_error("Bu foydalanuvchi allaqachon ro'yxatdan o'tgan.")
 
-    password = pending.get("password")
-    if not password:
-        verification_error("Ro'yxatdan o'tish paroli topilmadi.")
-
-    user = User.objects.create_user(username=verification.username, email=verification.email, password=password)
+    user = User(username=verification.username, email=verification.email, password=verification.password_hash)
+    user.save()
     request.session.pop("pending_registration", None)
     request.session.pop("telegram_verification_token", None)
     request.session.modified = True

@@ -1,8 +1,12 @@
+import logging
+
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -19,10 +23,22 @@ from .models import Follow, Subscription, User
 from .serializers import EmailTokenSerializer, PrivateUserSerializer, RegisterSerializer, UserSerializer
 
 
+class TelegramVerificationAnonRateThrottle(AnonRateThrottle):
+    scope = "telegram_verification"
+
+logger = logging.getLogger(__name__)
+
+
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Ro'yxatdan o'tish faqat Telegram orqali amalga oshiriladi."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
 
 class LoginView(TokenObtainPairView):
@@ -107,34 +123,44 @@ class PaymentWebhookStubView(APIView):
         )
 
 
-class TelegramVerificationView(APIView):
+class TelegramStartVerificationView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [TelegramVerificationAnonRateThrottle]
 
     def post(self, request):
-        action = request.path.rstrip("/").split("/")[-1]
-        if action == "start":
-            username = request.data.get("username", "")
-            email = request.data.get("email", "")
-            password = request.data.get("password", "")
-            confirmation = request.data.get("confirmPassword") or request.data.get("password_confirmation")
-            try:
-                result = create_telegram_verification(request, username, email, password, confirmation)
-                return Response(result, status=status.HTTP_200_OK)
-            except Exception as exc:
-                detail = str(exc)
-                return Response({"detail": detail if detail else "Telegram verification could not be started."}, status=status.HTTP_400_BAD_REQUEST)
+        username = request.data.get("username", "")
+        email = request.data.get("email", "")
+        password = request.data.get("password", "")
+        confirmation = request.data.get("confirmPassword") or request.data.get("password_confirmation")
+        try:
+            return Response(create_telegram_verification(request, username, email, password, confirmation), status=status.HTTP_200_OK)
+        except ValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, (list, tuple)):
+                detail = detail[0] if detail else "Tasdiqlashni boshlashda xatolik yuz berdi."
+            return Response({"detail": str(detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Unhandled Telegram start verification error")
+            return Response({"detail": "Tasdiqlashni boshlashda xatolik yuz berdi."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        if action == "verify":
-            token = request.data.get("verification_token")
-            code = request.data.get("code")
-            try:
-                result = verify_registration_code(request, token, code)
-                return Response(result, status=status.HTTP_200_OK)
-            except Exception as exc:
-                detail = str(exc)
-                return Response({"detail": detail if detail else "Code verification failed."}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({"detail": "Method not supported."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+class TelegramVerifyVerificationView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [TelegramVerificationAnonRateThrottle]
+
+    def post(self, request):
+        token = request.data.get("verification_token")
+        code = request.data.get("code")
+        try:
+            return Response(verify_registration_code(request, token, code), status=status.HTTP_200_OK)
+        except ValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, (list, tuple)):
+                detail = detail[0] if detail else "Tasdiqlash kodi xato."
+            return Response({"detail": str(detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Unhandled Telegram verify verification error")
+            return Response({"detail": "Tasdiqlashda xatolik yuz berdi."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class TelegramStatusView(APIView):
@@ -145,20 +171,33 @@ class TelegramStatusView(APIView):
         try:
             result = get_verification_status(request, token)
             return Response(result, status=status.HTTP_200_OK)
-        except Exception as exc:
-            return Response({"detail": str(exc) or "Unable to load verification status."}, status=status.HTTP_400_BAD_REQUEST)
+        except ValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, (list, tuple)):
+                detail = detail[0] if detail else "Tasdiqlash holati topilmadi."
+            return Response({"detail": str(detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Unhandled Telegram status error")
+            return Response({"detail": "Tasdiqlash holati yuklanmadi."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ResendTelegramVerificationView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [TelegramVerificationAnonRateThrottle]
 
     def post(self, request):
         token = request.data.get("verification_token") or request.session.get("telegram_verification_token")
         try:
             result = resend_verification_code(request, token)
             return Response({"status": result.get("status"), "detail": "Yangi kod yuborildi."}, status=status.HTTP_200_OK)
-        except Exception as exc:
-            return Response({"detail": str(exc) or "Unable to resend code."}, status=status.HTTP_400_BAD_REQUEST)
+        except ValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, (list, tuple)):
+                detail = detail[0] if detail else "Kodni qayta yuborishda xatolik yuz berdi."
+            return Response({"detail": str(detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Unhandled Telegram resend error")
+            return Response({"detail": "Kodni qayta yuborishda xatolik yuz berdi."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class CancelTelegramVerificationView(APIView):
@@ -169,8 +208,14 @@ class CancelTelegramVerificationView(APIView):
         try:
             result = cancel_verification(request, token)
             return Response(result, status=status.HTTP_200_OK)
-        except Exception as exc:
-            return Response({"detail": str(exc) or "Unable to cancel verification."}, status=status.HTTP_400_BAD_REQUEST)
+        except ValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, (list, tuple)):
+                detail = detail[0] if detail else "Tasdiqlash bekor qilinmadi."
+            return Response({"detail": str(detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("Unhandled Telegram cancel error")
+            return Response({"detail": "Tasdiqlash bekor qilinmadi."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UserDetailView(APIView):

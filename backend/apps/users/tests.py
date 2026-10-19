@@ -81,24 +81,23 @@ class UserProfileApiTests(APITestCase):
         self.assertEqual(fresh.status_code, 200)
         self.assertFalse(fresh.data["notification_preferences"]["likeComments"])
 
-    def test_registration_rejects_common_password(self):
+    def test_direct_registration_endpoint_is_unavailable(self):
         response = self.client.post("/api/auth/register/", {
             "username": "new-reader",
             "email": "new-reader@example.com",
             "password": "12345678",
         }, format="json")
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("password", response.data)
+        self.assertEqual(response.status_code, 404)
 
-    def test_registration_rejects_case_insensitive_duplicate_identity(self):
+    def test_direct_registration_endpoint_is_unavailable_for_duplicate_identity(self):
         response = self.client.post("/api/auth/register/", {
             "username": "CREATOR",
             "email": "CREATOR@example.com",
             "password": "different-secure-phrase-92",
         }, format="json")
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 404)
 
     def test_authenticated_user_can_follow_and_unfollow(self):
         self.client.force_authenticate(self.viewer)

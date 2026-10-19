@@ -21,12 +21,9 @@ class AvoBookApiTests(APITestCase):
         self.genre, _ = Genre.objects.get_or_create(name="Roman", defaults={"slug": "roman"})
         self.book = Book.objects.create(title="O'tkan kunlar", author=self.author, genre=self.genre, rating=4.9, duration=45600, owner=self.user)
 
-    def test_registration_returns_jwt_and_user(self):
+    def test_direct_registration_endpoint_is_unavailable(self):
         response = self.client.post("/api/auth/register/", {"username": "new-reader", "email": "reader@example.uz", "password": "strong-pass-123"}, format="json")
-        self.assertEqual(response.status_code, 201)
-        self.assertIn("access", response.data)
-        self.assertIn("refresh", response.data)
-        self.assertEqual(response.data["user"]["username"], "new-reader")
+        self.assertEqual(response.status_code, 404)
 
     def test_book_payload_has_ui_compatibility_fields(self):
         response = self.client.get("/api/books/")
