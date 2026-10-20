@@ -1,6 +1,7 @@
-import React,{useEffect,useMemo,useState,createElement as h} from "react";
+import React,{useEffect,useMemo,useState} from "react";
 import {Btn,Field} from "../components/ui";
 import {api,saveTokens} from "../api";
+import {QRCodeSVG} from "qrcode.react";
 
 const initialValues={username:"",email:"",identifier:"",password:"",confirmPassword:""};
 
@@ -9,6 +10,7 @@ export default function Auth({reg,nav}){
  const [error,setError]=useState("");
  const [submitting,setSubmitting]=useState(false);
  const [telegram,setTelegram]=useState({token:"",link:"",status:"idle",code:"",resendSeconds:0,expiresAt:null});
+ const [linkStartedAt,setLinkStartedAt]=useState(null);
  const update=event=>setValues(previous=>({...previous,[event.target.name]:event.target.value}));
 
  const codeSummary=useMemo(()=>{
@@ -26,8 +28,17 @@ export default function Auth({reg,nav}){
     setError("");
     return;
    }
+   if(result.status==="linked"){
+    setTelegram(previous=>({...previous,status:"linked"}));
+    setError("");
+    return;
+   }
+   if(result.status==="pending"){
+    setTelegram(previous=>({...previous,status:"pending"}));
+   }
    if(result.status==="cancelled"||result.status==="expired"){
     setTelegram(previous=>({...previous,status:"idle",token:"",link:"",code:"",expiresAt:null}));
+    setLinkStartedAt(null);
     setError("Tasdiqlash sessiyasi yopildi yoki muddati tugadi.");
    }
   }catch(_error){
@@ -61,7 +72,7 @@ export default function Auth({reg,nav}){
   try{
    const result=await api.post("/auth/telegram/start/",{username:values.username,email:values.email,password:values.password,confirmPassword:values.confirmPassword});
    setTelegram({token:result.verification_token,link:result.deep_link,status:"pending",code:"",resendSeconds:0,expiresAt:result.expires_at});
-   if(result.deep_link){window.open(result.deep_link, "_blank", "noopener,noreferrer");}
+   setLinkStartedAt(Date.now());
   }catch(requestError){setError(requestError.message);}finally{setSubmitting(false);}
  };
 
@@ -98,6 +109,7 @@ export default function Auth({reg,nav}){
    // ignore cancellation network errors and just clear the UI state
   }
   setTelegram({token:"",link:"",status:"idle",code:"",resendSeconds:0,expiresAt:null});
+  setLinkStartedAt(null);
   setError("");
  };
 
@@ -123,5 +135,51 @@ export default function Auth({reg,nav}){
   }catch(requestError){setError(requestError.message);}finally{setSubmitting(false);}
  };
 
- return h("div",{className:"max-w-sm mx-auto pt-10"},h("div",{className:"text-center mb-7"},h("div",{className:"mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-700 grid place-items-center text-2xl font-black glow"},"A"),h("h1",{className:"text-3xl font-extrabold mt-2"},"AvoBook"),h("p",{className:"text-sm text-slate-600"},reg?"Yangi hisob yarating":"Hisobingizga kiring")),h("form",{onSubmit:submit,className:"glass rounded-3xl p-6"},reg&&h(Field,{l:"Foydalanuvchi nomi",ph:"sardor_ovoz",name:"username",value:values.username,onChange:update,required:true}),h(Field,{l:reg?"Email":"Email yoki foydalanuvchi nomi",t:reg?"email":"text",ph:reg?"siz@mail.uz":"siz@mail.uz yoki username",name:reg?"email":"identifier",autoComplete:reg?"email":"username",value:reg?values.email:values.identifier,onChange:update,required:true}),h(Field,{l:"Parol",t:"password",ph:"••••••••",name:"password",value:values.password,onChange:update,required:true,minLength:8,autoComplete:reg?"new-password":"current-password"}),reg&&h(Field,{l:"Parolni tasdiqlang",t:"password",ph:"••••••••",name:"confirmPassword",value:values.confirmPassword,onChange:update,required:true,minLength:8,autoComplete:"new-password"}),reg&&telegram.token&&h("div",{className:"mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-3 text-sm text-slate-700"},h("p",{className:"font-semibold mb-2"},"Telegram orqali tasdiqlash"),h("p",{className:"mb-2 text-xs text-slate-600"},"Telegram botga kiring va tasdiqlash kodini oling."),telegram.link&&h("a",{href:telegram.link,target:"_blank",rel:"noopener noreferrer",className:"inline-block mb-3 text-violet-700 font-semibold underline"},"Telegramga o'tish"),h("label",{className:"block text-xs text-slate-600 mb-1"},"6 xonali kod"),h("input",{name:"telegramCode",value:telegram.code,onChange:event=>setTelegram(previous=>({...previous,code:event.target.value.slice(0,6)})),className:"w-full rounded-xl border border-slate-200 px-3 py-2 text-center tracking-[0.5em] font-semibold focus:outline-none focus:ring-2 focus:ring-violet-300",placeholder:"123456",inputMode:"numeric",maxLength:6,autoComplete:"one-time-code"}),h("div",{className:"mt-3 flex gap-2"},h(Btn,{type:"button",cn:"flex-1 py-2 text-sm",onClick:verifyTelegramCode,disabled:submitting},"Tasdiqlash"),h(Btn,{type:"button",cn:"flex-1 py-2 text-sm bg-slate-100 text-slate-700 hover:bg-slate-200",onClick:resendTelegramCode,disabled:submitting},"Qayta yuborish")),h("div",{className:"mt-3 flex items-center justify-between text-xs text-slate-500"},h("span",{className:""},codeSummary||"Kod 5 daqiqa davomida amal qiladi."),h("button",{type:"button",className:"text-slate-700 underline",onClick:cancelTelegramVerification},"Bekor qilish"))),error&&h("p",{role:"alert",className:"text-sm text-rose-600 mb-3 mt-3"},error),!reg&&h(Btn,{type:"submit",cn:"w-full py-3 mt-2",disabled:submitting},submitting?"Kutilmoqda...":"Kirish"),reg&&!telegram.token&&h(Btn,{type:"submit",cn:"w-full py-3 mt-2",disabled:submitting},submitting?"Kutilmoqda...":"Telegram orqali tasdiqlash"),reg&&telegram.token&&h(Btn,{type:"submit",cn:"w-full py-3 mt-2",disabled:submitting},submitting?"Kutilmoqda...":"Tasdiqlashni yakunlash"),h("p",{className:"text-center text-xs text-slate-600 mt-5"},reg?"Hisobingiz bormi? ":"Hisobingiz yo'qmi? ",h("a",{href:reg?"#/login":"#/register",className:"text-black font-bold underline"},reg?"Kirish":"Ro'yxatdan o'tish"))));
+ return <div className="mx-auto max-w-sm pt-10">
+  <div className="mb-7 text-center">
+   <div className="glow mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-700 text-2xl font-black">A</div>
+   <h1 className="mt-2 text-3xl font-extrabold">AvoBook</h1>
+   <p className="text-sm text-slate-600">{reg?"Yangi hisob yarating":"Hisobingizga kiring"}</p>
+  </div>
+  <form onSubmit={submit} className="glass rounded-3xl p-6">
+   {reg&&<Field l="Foydalanuvchi nomi" ph="sardor_ovoz" name="username" value={values.username} onChange={update} required/>}
+   <Field l={reg?"Email":"Email yoki foydalanuvchi nomi"} t={reg?"email":"text"} ph={reg?"siz@mail.uz":"siz@mail.uz yoki username"} name={reg?"email":"identifier"} autoComplete={reg?"email":"username"} value={reg?values.email:values.identifier} onChange={update} required/>
+   <Field l="Parol" t="password" ph="••••••••" name="password" value={values.password} onChange={update} required minLength={8} autoComplete={reg?"new-password":"current-password"}/>
+   {reg&&<Field l="Parolni tasdiqlang" t="password" ph="••••••••" name="confirmPassword" value={values.confirmPassword} onChange={update} required minLength={8} autoComplete="new-password"/>}
+   {reg&&telegram.token&&<div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-slate-700">
+    <p className="mb-3 font-semibold">Telegram orqali tasdiqlash</p>
+    {telegram.link&&<a href={telegram.link} target="_blank" rel="noopener noreferrer" className="mb-4 flex w-full items-center justify-center rounded-2xl bg-black px-5 py-3 text-center font-bold text-white transition hover:bg-neutral-800">Telegramni ochish</a>}
+    <p role="status" aria-live="polite" className="mb-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-violet-900">
+     {telegram.status==="linked"||telegram.status==="verified"?"Telegram bog'landi, kodni kiriting":"Telegram kutilmoqda..."}
+    </p>
+    <div className="mb-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+     <ol className="list-decimal space-y-2 pl-5 text-sm leading-5">
+      <li>«Telegramni ochish» tugmasini bosing.</li>
+      <li>Telegramda START tugmasini bosing (/start ni qo'lda yozmang).</li>
+      <li>Bot yuborgan 6 xonali kodni shu yerga kiriting.</li>
+     </ol>
+     {telegram.link&&<div className="hidden rounded-xl bg-white p-3 text-center md:block">
+      <QRCodeSVG value={telegram.link} size={144} level="M" includeMargin/>
+      <p className="mt-2 text-xs text-slate-600">Telefoningiz bilan skanerlang</p>
+     </div>}
+    </div>
+    {linkStartedAt&&telegram.status!=="linked"&&telegram.status!=="verified"&&Date.now()-linkStartedAt>=30000&&<p className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-medium text-amber-900">Telegramda START tugmasini bosdingizmi? Havola orqali kirish shart.</p>}
+    <label htmlFor="telegram-code" className="mb-1 block text-xs text-slate-600">6 xonali kod</label>
+    <input id="telegram-code" name="telegramCode" value={telegram.code} onChange={event=>setTelegram(previous=>({...previous,code:event.target.value.replace(/\D/g,"").slice(0,6)}))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-center font-semibold tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-violet-300" placeholder="123456" inputMode="numeric" maxLength={6} autoComplete="one-time-code"/>
+    <div className="mt-3 flex gap-2">
+     <Btn type="button" cn="flex-1 py-2 text-sm" onClick={verifyTelegramCode} disabled={submitting}>Tasdiqlash</Btn>
+     <Btn type="button" v="g" cn="flex-1 py-2 text-sm" onClick={resendTelegramCode} disabled={submitting}>Qayta yuborish</Btn>
+    </div>
+    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500">
+     <span>{codeSummary||"Kod 5 daqiqa davomida amal qiladi."}</span>
+     <button type="button" className="shrink-0 text-slate-700 underline" onClick={cancelTelegramVerification}>Bekor qilish</button>
+    </div>
+   </div>}
+   {error&&<p role="alert" className="mb-3 mt-3 text-sm text-rose-600">{error}</p>}
+   {!reg&&<Btn type="submit" cn="mt-2 w-full py-3" disabled={submitting}>{submitting?"Kutilmoqda...":"Kirish"}</Btn>}
+   {reg&&!telegram.token&&<Btn type="submit" cn="mt-2 w-full py-3" disabled={submitting}>{submitting?"Kutilmoqda...":"Telegram orqali tasdiqlash"}</Btn>}
+   {reg&&telegram.token&&<Btn type="submit" cn="mt-2 w-full py-3" disabled={submitting}>{submitting?"Kutilmoqda...":"Tasdiqlashni yakunlash"}</Btn>}
+   <p className="mt-5 text-center text-xs text-slate-600">{reg?"Hisobingiz bormi? ":"Hisobingiz yo'qmi? "}<a href={reg?"#/login":"#/register"} className="font-bold text-black underline">{reg?"Kirish":"Ro'yxatdan o'tish"}</a></p>
+  </form>
+ </div>;
 }
