@@ -41,7 +41,8 @@ class ReelDeleteApiTests(APITestCase):
             video_path = reel.video.path
             self.client.force_authenticate(self.owner)
 
-            response = self.client.delete(f"/api/reels/{reel.id}/")
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.delete(f"/api/reels/{reel.id}/")
 
             self.assertEqual(response.status_code, 204)
             self.assertFalse(Reel.objects.filter(pk=reel.pk).exists())

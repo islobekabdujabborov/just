@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+from django.db import transaction
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
@@ -42,4 +43,7 @@ def delete_reel_files(sender, instance, **kwargs):
         if isinstance(field, models.FileField):
             stored_file = getattr(instance, field.attname)
             if stored_file:
-                field.storage.delete(stored_file.name)
+                transaction.on_commit(
+                    lambda storage=field.storage, name=stored_file.name: storage.delete(name),
+                    robust=True,
+                )

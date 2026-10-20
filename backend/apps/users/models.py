@@ -60,7 +60,12 @@ class User(AbstractUser):
 class Subscription(models.Model):
     PLAN_MONTHLY = "monthly"
     PLAN_YEARLY = "yearly"
-    PLAN_CHOICES = [(PLAN_MONTHLY, "Monthly"), (PLAN_YEARLY, "Yearly")]
+    PLAN_CUSTOM = "custom"
+    PLAN_CHOICES = [
+        (PLAN_MONTHLY, "Monthly"),
+        (PLAN_YEARLY, "Yearly"),
+        (PLAN_CUSTOM, "Custom"),
+    ]
     STATUS_ACTIVE = "active"
     STATUS_CANCELED = "canceled"
     STATUS_EXPIRED = "expired"
@@ -78,6 +83,7 @@ class Subscription(models.Model):
     canceled_at = models.DateTimeField(null=True, blank=True)
     provider = models.CharField(max_length=32, blank=True, default="")
     provider_ref = models.CharField(max_length=255, blank=True, default="")
+    admin_note = models.CharField(max_length=500, blank=True, default="")
 
     objects = SubscriptionManager()
 

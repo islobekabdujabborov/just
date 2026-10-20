@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "corsheaders", "rest_framework", "rest_framework_simplejwt", "django_filters",
     "drf_spectacular", "apps.users", "apps.books", "apps.audiobooks", "apps.reels",
     "apps.interactions", "apps.comments", "apps.library", "apps.notifications", "apps.telegram_bot",
+    "apps.adminpanel",
 ]
 
 MIDDLEWARE = [

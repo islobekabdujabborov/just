@@ -38,6 +38,21 @@ from apps.comments.views import ReelCommentsView, CommentDeleteView
 from apps.comments.views import CommentLikeView
 from apps.library.views import LibraryView, LikedBooksView, SavedBooksView, HistoryView
 from apps.notifications.views import NotificationListView, ReadNotificationsView, ReadAllNotificationsView
+from apps.adminpanel.views import (
+    AdminPanelAudiobookAccessView,
+    AdminPanelAuditLogView,
+    AdminPanelBookDeletePreviewView,
+    AdminPanelBookDeleteView,
+    AdminPanelBookListView,
+    AdminPanelPremiumView,
+    AdminPanelReelDeletePreviewView,
+    AdminPanelReelDeleteView,
+    AdminPanelReelListView,
+    AdminPanelStatsView,
+    AdminPanelUserDetailView,
+    AdminPanelUserDeletePreviewView,
+    AdminPanelUserListView,
+)
 
 router = DefaultRouter()
 router.register("books", BookViewSet, basename="book")
@@ -167,6 +182,19 @@ urlpatterns = [
     path("api/auth/login/", LoginView.as_view()),
     path("api/auth/refresh/", TokenRefreshView.as_view()),
     path("api/auth/me/", CurrentUserView.as_view()),
+    path("api/admin-panel/stats/", AdminPanelStatsView.as_view()),
+    path("api/admin-panel/users/", AdminPanelUserListView.as_view()),
+    path("api/admin-panel/users/<int:pk>/", AdminPanelUserDetailView.as_view()),
+    path("api/admin-panel/users/<int:pk>/delete-preview/", AdminPanelUserDeletePreviewView.as_view()),
+    path("api/admin-panel/users/<int:pk>/premium/", AdminPanelPremiumView.as_view()),
+    path("api/admin-panel/books/", AdminPanelBookListView.as_view()),
+    path("api/admin-panel/books/<int:pk>/delete-preview/", AdminPanelBookDeletePreviewView.as_view()),
+    path("api/admin-panel/books/<int:pk>/", AdminPanelBookDeleteView.as_view()),
+    path("api/admin-panel/audiobooks/<int:pk>/", AdminPanelAudiobookAccessView.as_view()),
+    path("api/admin-panel/reels/", AdminPanelReelListView.as_view()),
+    path("api/admin-panel/reels/<int:pk>/delete-preview/", AdminPanelReelDeletePreviewView.as_view()),
+    path("api/admin-panel/reels/<int:pk>/", AdminPanelReelDeleteView.as_view()),
+    path("api/admin-panel/audit-log/", AdminPanelAuditLogView.as_view()),
     path("api/subscription/", SubscriptionStatusView.as_view()),
     path("api/subscription/cancel/", CancelSubscriptionView.as_view()),
     path("api/payments/checkout/", CheckoutStubView.as_view()),
