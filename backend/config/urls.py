@@ -32,7 +32,7 @@ from apps.users.views import (
 from apps.books.views import BookReviewListView, BookViewSet, RecommendationsView, ReviewDetailView, search_view, explore_view
 from apps.audiobooks.models import Audiobook, Chapter
 from apps.audiobooks.views import AudiobookBookmarkListView, AudiobookStreamView, AudiobookViewSet, BookmarkDetailView, ChapterDetailView, ChapterListView, ChapterStreamView, ProgressView
-from apps.reels.views import FollowingReelFeedView, ReelViewSet
+from apps.reels.views import FollowingReelFeedView, ReelComposeView, ReelViewSet
 from apps.interactions.views import ReelLikeView, ReelSaveView, BookLikeView, BookSaveView
 from apps.comments.views import ReelCommentsView, CommentDeleteView
 from apps.comments.views import CommentLikeView
@@ -187,6 +187,7 @@ urlpatterns = [
     path("api/audiobooks/<int:pk>/bookmarks/", AudiobookBookmarkListView.as_view()),
     path("api/bookmarks/<int:pk>/", BookmarkDetailView.as_view()),
     path("api/reels/feed/", FollowingReelFeedView.as_view()),
+    path("api/reels/compose/", ReelComposeView.as_view()),
     path("api/reels/<int:pk>/like/", ReelLikeView.as_view()),
     path("api/reels/<int:pk>/save/", ReelSaveView.as_view()),
     path("api/books/<int:pk>/like/", BookLikeView.as_view()),

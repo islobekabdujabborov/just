@@ -41,6 +41,57 @@ async function request(path,{method="GET",body,headers={},retry=true}={}){
  if(response.status===204)return null;
  return response.json();
 }
+
+export function uploadWithProgress(path,body,onProgress=()=>{}){
+ let xhr=null;
+ let cancelled=false;
+ let rejectPromise;
+ const promise=new Promise((resolve,reject)=>{
+  rejectPromise=reject;
+  const send=async retry=>{
+   if(cancelled)return;
+   xhr=new XMLHttpRequest();
+   xhr.open("POST",`${API_URL}${path}`);
+   const token=getAccessToken();
+   if(token)xhr.setRequestHeader("Authorization",`Bearer ${token}`);
+   xhr.upload.onprogress=event=>{
+    if(event.lengthComputable)onProgress(Math.round(event.loaded/event.total*100));
+   };
+   xhr.onerror=()=>reject(new Error("Internet aloqasini tekshirib, qayta urinib ko'ring."));
+   xhr.onabort=()=>reject(new DOMException("Yuklash bekor qilindi.","AbortError"));
+   xhr.onload=async()=>{
+    if(xhr.status===401&&retry){
+     const refreshToken=localStorage.getItem(REFRESH_KEY);
+     if(refreshToken){
+      try{
+       const response=await fetch(`${API_URL}/auth/refresh/`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refresh:refreshToken})});
+       if(response.ok){saveTokens(await response.json());send(false);return;}
+      }catch(error){
+       reject(new Error("Sessiya muddati tugadi. Qayta tizimga kiring."));
+       return;
+      }
+     }
+     clearTokens();
+    }
+    let payload=null;
+    try{payload=JSON.parse(xhr.responseText);}catch{}
+    if(xhr.status<200||xhr.status>=300){
+     reject(new Error(flattenErrors(payload)||`So'rov bajarilmadi (${xhr.status}).`));
+     return;
+    }
+    resolve(payload);
+   };
+   xhr.send(body);
+  };
+  send(true);
+ });
+ return {promise,cancel:()=>{
+  cancelled=true;
+  xhr?.abort();
+  rejectPromise(new DOMException("Yuklash bekor qilindi.","AbortError"));
+ }};
+}
+
 export const api={
  get:(path)=>request(path),
  post:(path,data)=>request(path,{method:"POST",body:data}),

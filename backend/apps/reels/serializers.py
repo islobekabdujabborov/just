@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from apps.books.serializers import BookSerializer
+from apps.audiobooks.access import can_access_audiobook
+from apps.audiobooks.models import Audiobook
 from .models import Reel
 
 class ReelSerializer(serializers.ModelSerializer):
-    book = BookSerializer(read_only=True)
+    book = serializers.SerializerMethodField()
     book_id = serializers.PrimaryKeyRelatedField(source="book", queryset=__import__("apps.books.models", fromlist=["Book"]).Book.objects.all(), write_only=True, required=False, allow_null=True)
     author = serializers.SerializerMethodField()
     video_url = serializers.SerializerMethodField()
@@ -27,6 +29,30 @@ class ReelSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         return request.build_absolute_uri(file.url) if file and request else (file.url if file else None)
     def get_video_url(self, obj): return self._url(obj, "video")
+    def get_book(self, obj):
+        if not obj.book_id:
+            return None
+        data = BookSerializer(obj.book, context=self.context).data
+        audiobook = next(iter(getattr(obj.book, "reel_audiobooks", [])), None)
+        chapters = audiobook.reel_chapters if audiobook else []
+        request = self.context.get("request")
+        user = request.user if request else None
+        has_locked_chapter = bool(
+            audiobook
+            and (
+                any(not chapter.is_free_preview for chapter in chapters)
+                or (audiobook.audio_file and not chapters)
+            )
+            and not can_access_audiobook(user, audiobook)
+        )
+        data.update({
+            "audiobook_id": audiobook.id if audiobook else None,
+            "has_audio": bool(audiobook and (audiobook.audio_file or chapters)),
+            "access": audiobook.access if audiobook else None,
+            "chapter_count": len(chapters),
+            "is_locked": has_locked_chapter,
+        })
+        return data
     def get_author(self, obj):
         from apps.users.serializers import UserSerializer
         return UserSerializer(obj.author, context=self.context).data

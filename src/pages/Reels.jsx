@@ -202,7 +202,10 @@ export default function Reels({nav}){
      <h2 className="text-3xl font-extrabold">{reel.t||reel.book?.title}</h2>
      <p className="text-white/70 text-sm">{reel.a||reel.book?.author?.name||""} • {reel.g||reel.book?.genre?.name||reel.book?.genre||""} • {reel.d||""}</p>
      <p className="text-sm text-white/80 mt-2 max-w-md">{reel.cap||reel.caption}</p>
-     <Btn onClick={()=>nav("/books/"+(reel.book?.id||reel.id))} cn="px-6 py-3 mt-4 inline-flex items-center gap-2"><I n="play" f={1} s={16}/>Kitobni tinglash</Btn>
+     {reel.book?.id&&<div className="mt-4 flex flex-wrap items-center gap-2">
+      <Btn onClick={()=>nav(`/books/${reel.book.id}${reel.book.has_audio?"?play=1":""}`)} cn="inline-flex items-center gap-2 px-6 py-3"><I n={reel.book.has_audio?"play":"book"} f={1} s={16}/>{reel.book.has_audio?"Tinglash":"Kitob haqida"}</Btn>
+      {reel.book.has_audio&&reel.book.is_locked&&<span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-3 py-2 text-xs font-bold text-black"><I n="lock" s={13}/>Premium</span>}
+     </div>}
     </div>
     <div className="flex flex-col gap-5 items-center">
      <button onClick={()=>toggleInteraction(reel,"liked")} className="grid gap-1 place-items-center active:scale-90 transition"><span className={`h-11 w-11 rounded-full glass grid place-items-center ${liked[reel.id]?"text-rose-500":""}`}><I n="heart" f={liked[reel.id]?1:0}/></span><span className="text-[11px] text-white/70">{count(reel.likes_count)}</span></button>

@@ -20,7 +20,7 @@ const savePlaybackSpeed=speed=>{
  localStorage.setItem("avobook.preferences",JSON.stringify({...preferences,playbackSpeed:speed}));
 };
 
-export default function BookDetail({id,nav}){
+export default function BookDetail({id,nav,autoPlay=false}){
  const [book,setBook]=useState(null);
  const [audiobook,setAudiobook]=useState(null);
  const [chapters,setChapters]=useState([]);
@@ -29,6 +29,7 @@ export default function BookDetail({id,nav}){
  const [isLiked,setIsLiked]=useState(false);
  const [isSaved,setIsSaved]=useState(false);
  const [loading,setLoading]=useState(true);
+ const [loadedBookId,setLoadedBookId]=useState(null);
  const [audioError,setAudioError]=useState("");
  const [error,setError]=useState("");
  const [bookmarks,setBookmarks]=useState([]);
@@ -59,11 +60,14 @@ export default function BookDetail({id,nav}){
  const lastProgressSent=useRef(0);
  const pendingSeek=useRef(null);
  const sleepTimerRef=useRef(null);
+ const autoPlayRequested=useRef(false);
 
  useEffect(()=>{
   let active=true;
   setSleepTimer("off");
+  autoPlayRequested.current=false;
   setLoading(true);
+  setLoadedBookId(null);
   setError("");
   setAudioError("");
   setBook(null);
@@ -100,7 +104,7 @@ export default function BookDetail({id,nav}){
    setIsSaved(Boolean(bookResult.is_saved));
    setRelatedBooks(itemsFrom(booksPayload).filter(item=>String(item.id)!==String(id)));
    const match=itemsFrom(audioPayload).find(item=>String(item.book?.id)===String(id));
-   if(!match)return;
+   if(!match){setLoadedBookId(String(id));return;}
    setAudiobook(match);
    if(getAccessToken()){
     try{
@@ -113,6 +117,7 @@ export default function BookDetail({id,nav}){
    try{parts=itemsFrom(await api.get(`/audiobooks/${match.id}/chapters/`));}catch{}
    if(!active)return;
    setChapters(parts);
+   setLoadedBookId(String(id));
    getDownloadedAudio().then(entries=>{
     if(active)setDownloadedAudio(Object.fromEntries(entries.filter(entry=>entry.chapter_id).map(entry=>[entry.chapter_id,true])));
    }).catch(reason=>{if(active)setOfflineError(reason.message);});
@@ -199,6 +204,20 @@ export default function BookDetail({id,nav}){
    }else setAudioError(reason.message||"Audio oqimini ochib bo'lmadi.");
   }finally{setLoadingStream(false);}
  };
+ useEffect(()=>{
+  if(!autoPlay||loading||loadedBookId!==String(id)||autoPlayRequested.current||!audiobook||(chapters.length===0&&!audiobook.has_audio))return;
+  autoPlayRequested.current=true;
+  setChapterIndex(0);
+  const firstChapter=chapters[0];
+  if(firstChapter?.locked){setPremiumPrompt(true);return;}
+  setLoadingStream(true);
+  const streamRequest=firstChapter
+   ?api.get(`/chapters/${firstChapter.id}/stream/`)
+   :api.get(`/audiobooks/${audiobook.id}/stream/`);
+  streamRequest.then(stream=>{setPlaybackUrl(stream.url);setShouldAutoPlay(true);})
+   .catch(reason=>{if(reason.message?.toLowerCase().includes("premium"))setPremiumPrompt(true);else setAudioError(reason.message||"Audio oqimini ochib bo'lmadi.");})
+   .finally(()=>setLoadingStream(false));
+ },[autoPlay,loading,loadedBookId,id,audiobook,chapters]);
  const seekToBookmark=bookmark=>{
   setBookmarkError("");
   if(bookmark.chapter){
@@ -354,6 +373,7 @@ export default function BookDetail({id,nav}){
      <Btn onClick={playAudio} disabled={loadingStream} cn="px-6 py-3 flex items-center gap-2"><I n="play" f={1} s={16}/>{loadingStream?"Yuklanmoqda...":"Tinglash"}</Btn>
      <Btn v="g" onClick={()=>toggleBookInteraction("save")} aria-label={isSaved?"Saqlanganlardan olib tashlash":"Saqlash"} aria-pressed={isSaved} cn="px-4 py-3"><I n="save" f={isSaved?1:0}/></Btn>
      <Btn v="g" onClick={()=>toggleBookInteraction("like")} aria-label={isLiked?"Yoqtirishdan olib tashlash":"Yoqtirish"} aria-pressed={isLiked} cn="px-4 py-3"><I n="heart" f={isLiked?1:0}/></Btn>
+     <Btn v="g" onClick={()=>nav(`/create?book=${id}&audio=1`)} cn="px-4 py-3">Shu kitobdan reel yaratish</Btn>
     </div>
    </div>
   </div>

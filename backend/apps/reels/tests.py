@@ -1,6 +1,7 @@
 from datetime import timedelta
 import os
 import tempfile
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -8,6 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.books.models import Author, Book, Genre
+from apps.audiobooks.models import Audiobook, Chapter
 from apps.comments.models import Comment
 from apps.interactions.models import Like, Save
 from apps.users.models import Follow, User
@@ -149,3 +151,199 @@ class FollowingReelFeedApiTests(APITestCase):
         response = self.client.get("/api/reels/feed/")
 
         self.assertEqual(response.status_code, 401)
+
+
+class ReelComposeApiTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username="compose-owner",
+            email="compose-owner@example.com",
+            password="test-password",
+        )
+        self.other_user = User.objects.create_user(
+            username="compose-other",
+            email="compose-other@example.com",
+            password="test-password",
+        )
+        self.author = Author.objects.create(name="Compose Author")
+        self.genre = Genre.objects.create(name="Compose Genre", slug="compose-genre")
+        self.client.force_authenticate(self.owner)
+
+    def video(self):
+        return SimpleUploadedFile("clip.mp4", b"video content", content_type="video/mp4")
+
+    def audio(self, name="chapter.mp3"):
+        return SimpleUploadedFile(name, b"audio content", content_type="audio/mpeg")
+
+    @patch("apps.reels.views._ffprobe_duration", return_value=12)
+    def test_compose_creates_book_audiobook_chapter_and_reel(self, _probe):
+        response = self.client.post(
+            "/api/reels/compose/",
+            {
+                "video": self.video(),
+                "title": "Ajoyib kitob",
+                "author_name": "Compose Author",
+                "genre": "Compose Genre",
+                "audio_files": self.audio(),
+                "chapter_titles": "1-bob",
+                "chapter_free_preview": "true",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Book.objects.count(), 1)
+        self.assertEqual(Audiobook.objects.count(), 1)
+        self.assertEqual(Chapter.objects.count(), 1)
+        self.assertEqual(response.data["book"]["chapter_count"], 1)
+        self.assertTrue(response.data["book"]["has_audio"])
+        self.assertEqual(response.data["book"]["audiobook_id"], Audiobook.objects.get().id)
+        self.assertEqual(response.data["book"]["access"], Audiobook.ACCESS_FREE)
+        chapter = Chapter.objects.get()
+        self.assertEqual(chapter.title, "1-bob")
+        self.assertEqual(chapter.duration, 12)
+        self.assertTrue(chapter.is_free_preview)
+
+    @patch("apps.reels.views._ffprobe_duration", return_value=12)
+    def test_compose_adds_multiple_chapters_with_premium_preview(self, _probe):
+        response = self.client.post(
+            "/api/reels/compose/",
+            {
+                "video": self.video(),
+                "title": "Premium kitob",
+                "author_name": "Compose Author",
+                "genre": "Compose Genre",
+                "access": Audiobook.ACCESS_PREMIUM,
+                "audio_files": [self.audio("first.mp3"), self.audio("second.mp3")],
+                "chapter_titles": ["Kirish", "Davomi"],
+                "chapter_free_preview": ["true", "false"],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["book"]["chapter_count"], 2)
+        self.assertEqual(response.data["book"]["access"], Audiobook.ACCESS_PREMIUM)
+        self.assertFalse(response.data["book"]["is_locked"])
+        chapters = list(Chapter.objects.order_by("order"))
+        self.assertEqual([chapter.order for chapter in chapters], [1, 2])
+        self.assertEqual([chapter.is_free_preview for chapter in chapters], [True, False])
+        self.assertEqual(Audiobook.objects.get().duration, 24)
+        self.assertEqual(Book.objects.get().duration, 24)
+        self.client.force_authenticate(user=None)
+        feed_response = self.client.get("/api/reels/")
+        self.assertTrue(feed_response.data["results"][0]["book"]["is_locked"])
+
+    @patch("apps.reels.views._ffprobe_duration", return_value=0)
+    def test_compose_reuses_existing_book_without_duplicate(self, _probe):
+        book = Book.objects.create(title="Mavjud", author=self.author, genre=self.genre, owner=self.owner)
+
+        response = self.client.post(
+            "/api/reels/compose/",
+            {
+                "video": self.video(),
+                "book_id": str(book.id),
+                "audio_files": self.audio(),
+                "chapter_titles": "Bob",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Book.objects.count(), 1)
+        self.assertEqual(Audiobook.objects.get().created_by, self.owner)
+
+    @patch("apps.reels.views._ffprobe_duration", return_value=0)
+    def test_compose_appends_chapter_to_users_existing_audiobook(self, _probe):
+        book = Book.objects.create(title="Mavjud", author=self.author, genre=self.genre, owner=self.owner)
+        audiobook = Audiobook.objects.create(book=book, created_by=self.owner)
+        Chapter.objects.create(audiobook=audiobook, title="Avvalgi bob", order=1)
+
+        response = self.client.post(
+            "/api/reels/compose/",
+            {
+                "video": self.video(),
+                "book_id": str(book.id),
+                "audio_files": self.audio(),
+                "chapter_titles": "Yangi bob",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Audiobook.objects.count(), 1)
+        self.assertEqual(Chapter.objects.count(), 2)
+        self.assertEqual(
+            list(Chapter.objects.order_by("order").values_list("title", "order")),
+            [("Avvalgi bob", 1), ("Yangi bob", 2)],
+        )
+
+    def test_non_owner_cannot_attach_audio_to_another_users_book(self):
+        book = Book.objects.create(title="Boshqa", author=self.author, genre=self.genre, owner=self.other_user)
+
+        response = self.client.post(
+            "/api/reels/compose/",
+            {
+                "video": self.video(),
+                "book_id": str(book.id),
+                "audio_files": self.audio(),
+                "chapter_titles": "Bob",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Reel.objects.count(), 0)
+        self.assertEqual(Audiobook.objects.count(), 0)
+
+    def test_invalid_audio_rolls_back_without_saved_files(self):
+        with tempfile.TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            response = self.client.post(
+                "/api/reels/compose/",
+                {
+                    "video": self.video(),
+                    "title": "Yangi kitob",
+                    "author_name": "Compose Author",
+                    "genre": "Compose Genre",
+                    "audio_files": SimpleUploadedFile("wrong.txt", b"not audio"),
+                },
+                format="multipart",
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(Book.objects.count(), 0)
+            self.assertEqual(Reel.objects.count(), 0)
+            self.assertEqual(Audiobook.objects.count(), 0)
+            self.assertEqual(Chapter.objects.count(), 0)
+            self.assertEqual(os.listdir(media_dir), [])
+
+    def test_compose_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post("/api/reels/compose/", {"video": self.video()}, format="multipart")
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("apps.reels.views._ffprobe_duration", return_value=0)
+    def test_composed_premium_audio_remains_blocked_from_public_media(self, _probe):
+        with tempfile.TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            response = self.client.post(
+                "/api/reels/compose/",
+                {
+                    "video": self.video(),
+                    "title": "Premium kitob",
+                    "author_name": "Compose Author",
+                    "genre": "Compose Genre",
+                    "access": Audiobook.ACCESS_PREMIUM,
+                    "audio_files": self.audio(),
+                    "chapter_titles": "Maxfiy bob",
+                },
+                format="multipart",
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+            chapter = Chapter.objects.get()
+            media_response = self.client.get(chapter.audio_file.url)
+            if media_response.streaming:
+                b"".join(media_response.streaming_content)
+            media_response.close()
+            self.assertEqual(media_response.status_code, 403)

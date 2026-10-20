@@ -22,9 +22,10 @@ class BookSerializer(serializers.ModelSerializer):
     likes_count = serializers.IntegerField(read_only=True)
     is_liked = serializers.SerializerMethodField()
     is_saved = serializers.SerializerMethodField()
+    owner_id = serializers.IntegerField(read_only=True)
     class Meta:
         model = Book
-        fields = ["id", "title", "author", "author_name", "cover", "description", "genre", "language", "rating", "duration", "created_at", "updated_at", "t", "a", "g", "r", "d", "dsc", "likes_count", "is_liked", "is_saved"]
+        fields = ["id", "title", "author", "author_name", "cover", "description", "genre", "language", "rating", "duration", "created_at", "updated_at", "t", "a", "g", "r", "d", "dsc", "likes_count", "is_liked", "is_saved", "owner_id"]
         read_only_fields = ["id", "created_at", "updated_at", "likes_count", "is_liked", "is_saved"]
     def get_d(self, obj):
         return f"{obj.duration // 3600}s {obj.duration % 3600 // 60:02d}d" if obj.duration else ""

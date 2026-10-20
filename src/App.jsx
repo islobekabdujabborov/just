@@ -19,13 +19,15 @@ const GRADIENTS=["from-violet-600 to-fuchsia-700","from-indigo-600 to-violet-800
 
 export default function App(){
  const route=useRoute();
+ const routePath=route.split("?")[0];
+ const routeParams=new URLSearchParams(route.split("?")[1]||"");
  const [recommendations,setRecommendations]=useState([]);
  const [installPrompt,setInstallPrompt]=useState(null);
  const [showInstallHelp,setShowInstallHelp]=useState(false);
  const [isInstalled,setIsInstalled]=useState(()=>window.matchMedia("(display-mode: standalone)").matches||window.navigator.standalone===true);
- const isAuth=route==="/login"||route==="/register";
- const isReelFeed=route==="/";
- const isProtectedRoute=["/create","/library","/profile","/notifications","/settings"].includes(route);
+ const isAuth=routePath==="/login"||routePath==="/register";
+ const isReelFeed=routePath==="/";
+ const isProtectedRoute=["/create","/library","/profile","/notifications","/settings"].includes(routePath);
  useEffect(()=>{
   if("serviceWorker" in navigator){
    navigator.serviceWorker.register("/service-worker.js").catch(error=>console.error("AvoBook service worker ro'yxatdan o'tmadi:",error));
@@ -56,10 +58,10 @@ export default function App(){
   });
   return ()=>{active=false;};
  },[]);
- const isUserProfile=route.startsWith("/users/");
- const page=isProtectedRoute&&!getAccessToken()?h(Auth,{nav}):route.startsWith("/books/")?h(BookDetail,{id:route.split("/")[2],nav}):isUserProfile?h(Profile,{nav,username:decodeURIComponent(route.slice("/users/".length))}):{
+ const isUserProfile=routePath.startsWith("/users/");
+ const page=isProtectedRoute&&!getAccessToken()?h(Auth,{nav}):routePath.startsWith("/books/")?h(BookDetail,{id:routePath.split("/")[2],nav,autoPlay:routeParams.get("play")==="1"}):isUserProfile?h(Profile,{nav,username:decodeURIComponent(routePath.slice("/users/".length))}):routePath==="/create"?h(Create,{nav,bookId:routeParams.get("book"),audioEnabled:routeParams.get("audio")==="1"}):{
   "/":h(Reels,{nav}),"/explore":h(Explore,{nav}),"/library":h(Library,{nav}),"/profile":h(Profile,{nav}),
-  "/create":h(Create,{nav}),"/notifications":h(Notifications,{nav}),"/settings":h(Settings,{nav}),
+  "/notifications":h(Notifications,{nav}),"/settings":h(Settings,{nav}),
   "/login":h(Auth,{nav}),"/register":h(Auth,{reg:true,nav})
  }[route]||h(Explore,{nav});
  const installApp=async()=>{
